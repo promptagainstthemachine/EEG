@@ -1,0 +1,671 @@
+# EEG - AWS Bedrock / SageMaker AI Security Rules
+# Regex + AST patterns for detecting AI-specific misconfigurations
+
+rules:
+  # ==================== IAM ====================
+  - id: AWS-IAM-001
+    name: "Wildcard Bedrock permissions"
+    severity: CRITICAL
+    category: iam
+    description: "Overly broad bedrock:* or sagemaker:* actions"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: '["'']bedrock:\*["'']'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+      - type: regex
+        match: '["'']sagemaker:\*["'']'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Scope Bedrock/SageMaker permissions to specific actions (e.g., bedrock:InvokeModel) and restrict resources to specific model ARNs."
+
+  - id: AWS-IAM-002
+    name: "Wildcard resource ARN for Bedrock"
+    severity: HIGH
+    category: iam
+    description: "Resource ARN using wildcards for Bedrock foundation models"
+    patterns:
+      - type: regex
+        match: 'arn:aws:bedrock:\*::\*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+      - type: regex
+        match: 'arn:aws:bedrock:[^:]+:[^:]+:foundation-model/\*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Restrict resource ARNs to specific Bedrock model IDs instead of using wildcards."
+
+  - id: AWS-IAM-003
+    name: "AdministratorAccess on AI workload role"
+    severity: CRITICAL
+    category: iam
+    description: "AI workload roles should never use AdministratorAccess"
+    patterns:
+      - type: regex
+        match: 'AdministratorAccess'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Replace AdministratorAccess with least-privilege policies scoped to required AI services only."
+
+  - id: AWS-IAM-004
+    name: "Broad Secrets Manager access"
+    severity: MEDIUM
+    category: iam
+    description: "secretsmanager:* or GetSecretValue with wildcard resources"
+    patterns:
+      - type: regex
+        match: 'secretsmanager:\*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Scope Secrets Manager access to specific secret ARNs used by the AI workload."
+
+  # ==================== GUARDRAILS ====================
+  - id: AWS-GUARD-001
+    name: "Guardrail with LOW filter strength"
+    severity: HIGH
+    category: guardrail
+    description: "LOW-strength guardrails miss ~70% of adversarial prompts"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'input_strength.*["\''](LOW|NONE)["\'']\s*'
+        file_types: [".py", ".json", ".yaml", ".yml"]
+      - type: regex
+        match: 'output_strength.*["\''](LOW|NONE)["\'']\s*'
+        file_types: [".py", ".json", ".yaml", ".yml"]
+    recommendation: "Set guardrail filter strengths to HIGH for both input and output."
+
+  - id: AWS-GUARD-002
+    name: "Missing PROMPT_ATTACK filter"
+    severity: HIGH
+    category: guardrail
+    description: "Content filter does not include PROMPT_ATTACK detection"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex_absent
+        match: 'PROMPT_ATTACK'
+        scope: guardrail_block
+        file_types: [".py", ".yaml", ".yml"]
+    recommendation: "Enable PROMPT_ATTACK content filter type with HIGH input strength."
+
+  - id: AWS-GUARD-003
+    name: "PII filter not blocking AWS credentials"
+    severity: HIGH
+    category: guardrail
+    description: "Guardrail should block AWS_ACCESS_KEY and AWS_SECRET_KEY PII types"
+    patterns:
+      - type: regex
+        match: 'type.*AWS_(ACCESS|SECRET)_KEY.*action.*ANONYMIZE'
+        file_types: [".py", ".yaml", ".yml"]
+    recommendation: "Set PII entity action to BLOCK (not ANONYMIZE) for AWS credential types."
+
+  # ==================== MODEL SECURITY ====================
+  - id: AWS-MODEL-001
+    name: "Model weights in public S3 bucket"
+    severity: CRITICAL
+    category: model
+    description: "S3 bucket containing model weights (.bin, .safetensors, .onnx) may be publicly accessible"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 'BlockPublicAccess\.BLOCK_ALL\s*=\s*False'
+        file_types: [".py"]
+      - type: regex
+        match: 'block_public_acls\s*=\s*false'
+        file_types: [".tf", ".hcl"]
+      - type: regex
+        match: '"BlockPublicAccess":\s*false'
+        file_types: [".json"]
+    recommendation: "Enable BlockPublicAccess.BLOCK_ALL on all S3 buckets storing model artifacts."
+
+  - id: AWS-MODEL-002
+    name: "S3 bucket missing encryption"
+    severity: HIGH
+    category: model
+    description: "Model artifact bucket without server-side encryption (KMS preferred)"
+    patterns:
+      - type: regex
+        match: 'encryption\s*=\s*s3\.BucketEncryption\.UNENCRYPTED'
+        file_types: [".py"]
+      - type: regex
+        match: 'enforce_ssl\s*=\s*False'
+        file_types: [".py"]
+    recommendation: "Enable KMS encryption and enforce SSL on S3 buckets storing model weights or training data."
+
+  - id: AWS-MODEL-003
+    name: "SageMaker endpoint without encryption"
+    severity: HIGH
+    category: model
+    description: "SageMaker inference endpoint without KMS encryption"
+    patterns:
+      - type: regex
+        match: 'create_endpoint_config.*(?!KmsKeyId)'
+        file_types: [".py"]
+      - type: regex
+        match: 'kms_key_id\s*=\s*None'
+        file_types: [".py"]
+    recommendation: "Always specify a KMS key ID for SageMaker endpoint configurations."
+
+  # ==================== STORAGE ====================
+  - id: AWS-STOR-001
+    name: "S3 public access allowed"
+    severity: CRITICAL
+    category: storage
+    description: "S3 bucket with public access enabled — risk of training data or embedding exposure"
+    patterns:
+      - type: regex
+        match: 'block_public_acls\s*=\s*false'
+        file_types: [".tf", ".hcl"]
+      - type: regex
+        match: 'restrict_public_buckets\s*=\s*false'
+        file_types: [".tf", ".hcl"]
+      - type: regex
+        match: 'acl\s*=\s*["\''](public-read|public-read-write)["\'']\s*'
+        file_types: [".tf", ".hcl", ".py"]
+    recommendation: "Block all public access on S3 buckets used for AI data and model artifacts."
+
+  - id: AWS-STOR-002
+    name: "S3 versioning disabled"
+    severity: MEDIUM
+    category: storage
+    description: "Bucket versioning disabled — cannot recover from data poisoning or accidental overwrite"
+    patterns:
+      - type: regex
+        match: 'versioned\s*=\s*False'
+        file_types: [".py"]
+      - type: regex
+        match: 'versioning\s*\{[^}]*status\s*=\s*["\''](Disabled|Suspended)["\'']\s*'
+        file_types: [".tf"]
+    recommendation: "Enable versioning on buckets storing training data, embeddings, or model weights."
+
+  # ==================== NETWORK ====================
+  - id: AWS-NET-001
+    name: "Security group allows all outbound"
+    severity: MEDIUM
+    category: network
+    description: "AI workload security group with unrestricted outbound — risk of data exfiltration"
+    patterns:
+      - type: regex
+        match: 'allow_all_outbound\s*=\s*True'
+        file_types: [".py"]
+      - type: regex
+        match: 'cidr_blocks\s*=\s*\["0\.0\.0\.0/0"\]'
+        file_types: [".tf"]
+    recommendation: "Restrict outbound rules to only required endpoints (model APIs, logging, NTP)."
+
+  - id: AWS-NET-002
+    name: "Missing VPC endpoint for Bedrock"
+    severity: MEDIUM
+    category: network
+    description: "Bedrock API calls traverse public internet without VPC endpoint"
+    patterns:
+      - type: regex_absent
+        match: 'com\.amazonaws\..+\.bedrock'
+        scope: file
+        file_types: [".tf", ".py"]
+    recommendation: "Create VPC endpoints for Bedrock to keep API traffic within your VPC."
+
+  # ==================== PROMPT SECURITY ====================
+  - id: AWS-PROMPT-001
+    name: "User input interpolated into system prompt"
+    severity: CRITICAL
+    category: prompt
+    description: "f-string or .format() with user-controlled data in system prompt — prompt injection risk"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: ast
+        match: "fstring_in_prompt"
+        context: ["system_prompt", "SystemMessage", "system_message"]
+        file_types: [".py"]
+      - type: regex
+        match: 'system.*prompt.*=.*f["\'']{1}'
+        file_types: [".py"]
+      - type: regex
+        match: 'system.*prompt.*\.format\('
+        file_types: [".py"]
+    recommendation: "Never interpolate user input directly into system prompts. Use parameterized message templates."
+
+  - id: AWS-PROMPT-002
+    name: "Prompt injection patterns in agent instructions"
+    severity: HIGH
+    category: prompt
+    description: "Suspicious strings (ignore previous, reveal prompt, jailbreak) found in instruction text"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: '(?i)(ignore previous instructions|disregard.*prior|reveal your (prompt|instructions)|jailbreak|DAN mode|developer mode|bypass (security|restrictions))'
+        file_types: [".py", ".yaml", ".yml", ".json", ".txt", ".md"]
+    recommendation: "Remove or sanitize prompt injection test strings from production code."
+
+  # ==================== SECRETS ====================
+  - id: AWS-SEC-001
+    name: "Hardcoded AWS access key"
+    severity: CRITICAL
+    category: secrets
+    description: "AWS access key ID pattern detected in source code"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'AKIA[0-9A-Z]{16}'
+        file_types: [".py", ".json", ".yaml", ".yml", ".env", ".tf", ".sh", ".toml", ".cfg"]
+    recommendation: "Remove hardcoded AWS keys. Use IAM roles, environment variables, or AWS Secrets Manager."
+
+  - id: AWS-SEC-002
+    name: "Hardcoded secret or password"
+    severity: HIGH
+    category: secrets
+    description: "Potential secret or password assignment in source"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: '(?i)(password|secret_key|api_key|token)\s*=\s*["\'']+[A-Za-z0-9+/=]{16,}["\'']+\s*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".env", ".tf", ".toml", ".cfg"]
+    recommendation: "Store secrets in a secrets manager (AWS Secrets Manager, Azure Key Vault, GCP Secret Manager)."
+
+  - id: AWS-SEC-003
+    name: "Credentials extracted to variables"
+    severity: HIGH
+    category: secrets
+    description: "AWS credentials extracted from session and stored in local variables"
+    patterns:
+      - type: regex
+        match: 'credentials\.(access_key|secret_key|token)\b'
+        file_types: [".py"]
+    recommendation: "Avoid extracting credentials to variables. Use boto3 session directly for API calls."
+
+  # ==================== IAC ====================
+  - id: AWS-IAC-001
+    name: "Terraform S3 backend without encryption"
+    severity: HIGH
+    category: iac
+    description: "Terraform state backend missing encryption configuration"
+    patterns:
+      - type: regex
+        match: 'backend\s+"s3"\s+\{[^}]*(?!encrypt)'
+        file_types: [".tf"]
+    recommendation: "Enable encryption on S3 backend: encrypt = true with a KMS key."
+
+  - id: AWS-IAC-002
+    name: "SageMaker notebook instance with internet access"
+    severity: HIGH
+    category: iac
+    description: "SageMaker notebook allows direct internet access"
+    patterns:
+      - type: regex
+        match: 'direct_internet_access\s*=\s*["\'']*Enabled'
+        file_types: [".tf", ".py", ".json"]
+    recommendation: "Set direct_internet_access = Disabled and use VPC endpoints."
+
+  # ==================== POLICY ====================
+  - id: AWS-POL-001
+    name: "Bedrock model access not restricted"
+    severity: HIGH
+    category: policy
+    description: "No model access policy — any role in the account can invoke any Bedrock model"
+    patterns:
+      - type: regex
+        match: 'Effect.*Allow.*bedrock:InvokeModel.*Resource.*\*'
+        file_types: [".json", ".yaml", ".yml"]
+    recommendation: "Implement model access policies restricting which IAM roles can invoke specific foundation models."
+
+  - id: AWS-POL-002
+    name: "Lambda function with public invoke"
+    severity: CRITICAL
+    category: policy
+    description: "Lambda powering AI agent has public invocation enabled"
+    patterns:
+      - type: regex
+        match: 'add_permission.*Principal.*\*'
+        file_types: [".py"]
+      - type: regex
+        match: 'FunctionUrlAuthType.*NONE'
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Restrict Lambda invocation to specific IAM principals. Never allow Principal: *."
+
+  # ==================== LOGGING & MONITORING ====================
+  - id: AWS-LOG-001
+    name: "Model invocation logging not enabled"
+    severity: CRITICAL
+    category: logging
+    description: "Bedrock model invocation logging is not configured — no audit trail for AI inference calls"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'loggingConfig|ModelInvocationLogging|model_invocation_logging|put_model_invocation_logging'
+        scope: file
+        file_types: [".py", ".tf", ".json", ".yaml", ".yml"]
+    recommendation: "Enable Bedrock model invocation logging via put_model_invocation_logging_configuration to S3 and CloudWatch for audit and compliance."
+
+  - id: AWS-LOG-002
+    name: "CloudWatch log group without KMS encryption"
+    severity: HIGH
+    category: logging
+    description: "AI workload CloudWatch log group storing sensitive inference data without encryption"
+    patterns:
+      - type: regex
+        match: 'logs\.LogGroup\([^)]*(?!encryption_key)'
+        file_types: [".py"]
+      - type: regex
+        match: 'aws_cloudwatch_log_group[^}]*(?!kms_key_id)'
+        file_types: [".tf"]
+    recommendation: "Set KMS encryption on CloudWatch log groups that capture model invocation data or agent conversation logs."
+
+  - id: AWS-LOG-003
+    name: "CloudWatch log retention not configured"
+    severity: MEDIUM
+    category: logging
+    description: "Log group has no retention policy — infinite retention increases exposure and cost"
+    patterns:
+      - type: regex
+        match: 'retention_in_days\s*=\s*0'
+        file_types: [".tf"]
+      - type: regex
+        match: 'RemovalPolicy\.DESTROY'
+        file_types: [".py"]
+    recommendation: "Set CloudWatch log retention to 90-365 days based on compliance requirements."
+
+  - id: AWS-LOG-004
+    name: "CloudTrail not monitoring Bedrock API calls"
+    severity: HIGH
+    category: logging
+    description: "CloudTrail should capture Bedrock management and data events for security audit"
+    patterns:
+      - type: regex_absent
+        match: 'cloudtrail|CloudTrail'
+        scope: file
+        file_types: [".tf", ".py"]
+    recommendation: "Enable CloudTrail with data event logging for Bedrock service to track InvokeModel, CreateAgent, and other API calls."
+
+  # ==================== GUARDRAIL ABSENCE & CONFIGURATION ====================
+  - id: AWS-GUARD-010
+    name: "No guardrails configured for Bedrock deployment"
+    severity: CRITICAL
+    category: guardrail
+    description: "No Bedrock guardrails found in the project — AI models deployed without content filtering, PII protection, or prompt attack defense"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex_absent
+        match: 'CfnGuardrail|create_guardrail|guardrail|Guardrail'
+        scope: file
+        file_types: [".py", ".tf", ".yaml", ".yml"]
+    recommendation: "Create Bedrock guardrails with PROMPT_ATTACK filter (HIGH strength), PII entity blocking (AWS_ACCESS_KEY, AWS_SECRET_KEY, EMAIL, PHONE), and topic denial policies."
+
+  - id: AWS-GUARD-011
+    name: "Guardrail missing PII entity blocking"
+    severity: HIGH
+    category: guardrail
+    description: "Guardrail does not block sensitive PII types — risk of credential/PII leakage in model responses"
+    patterns:
+      - type: regex_absent
+        match: 'pii_entities_config|PiiEntityConfig|AWS_ACCESS_KEY|AWS_SECRET_KEY'
+        scope: file
+        file_types: [".py", ".yaml", ".yml"]
+    recommendation: "Add PII entity filters for AWS_ACCESS_KEY, AWS_SECRET_KEY, EMAIL, PHONE, SSN with action=BLOCK."
+
+  - id: AWS-GUARD-012
+    name: "Guardrail missing topic denial policy"
+    severity: MEDIUM
+    category: guardrail
+    description: "No topic denial configured — model can respond to any topic including harmful or off-scope requests"
+    patterns:
+      - type: regex_absent
+        match: 'topic_policy_config|TopicPolicyConfig|denied_topics'
+        scope: file
+        file_types: [".py", ".yaml", ".yml"]
+    recommendation: "Configure topic denial policies to restrict model from responding to out-of-scope, harmful, or sensitive topics."
+
+  # ==================== EVALUATION CONFIGURATION ====================
+  - id: AWS-EVAL-001
+    name: "No model evaluation configuration"
+    severity: HIGH
+    category: guardrail
+    description: "No Bedrock model evaluation or red-team testing configuration found — model quality and safety not validated"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'create_evaluation_job|EvaluationJob|model_evaluation|evaluation_config|red_?team'
+        scope: file
+        file_types: [".py", ".json", ".yaml", ".yml"]
+    recommendation: "Configure Bedrock model evaluation jobs with automated red-teaming, toxicity, accuracy, and robustness benchmarks before production deployment."
+
+  # ==================== AGENT SECURITY & EXCESSIVE AGENCY ====================
+  - id: AWS-AGENT-001
+    name: "Agent with no human approval for actions"
+    severity: CRITICAL
+    category: policy
+    description: "Bedrock agent can execute tool actions without human confirmation — excessive agency risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'ENABLED.*user_confirmation.*DISABLED|userConfirmation.*DISABLED|requireConfirmation.*false'
+        file_types: [".py", ".json", ".yaml", ".yml"]
+      - type: regex_absent
+        match: 'user_confirmation|requireConfirmation|CONFIRM|human_approval|human_in_the_loop'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Enable user_confirmation=ENABLED on all agent action groups that perform mutating operations (write, delete, invoke)."
+
+  - id: AWS-AGENT-002
+    name: "Agent action group with wildcard Lambda permissions"
+    severity: CRITICAL
+    category: policy
+    description: "Agent Lambda function has overly broad IAM permissions — can access resources beyond its scope"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'lambda.*actions.*\*|Action.*lambda:\*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Restrict agent Lambda IAM permissions to only the specific APIs and resources the agent needs."
+
+  - id: AWS-AGENT-003
+    name: "Agent memory session not encrypted"
+    severity: HIGH
+    category: policy
+    description: "Bedrock agent session memory stores conversation context without KMS encryption"
+    patterns:
+      - type: regex_absent
+        match: 'memoryConfiguration.*kmsKeyArn|session.*kms|memory.*encrypt'
+        scope: file
+        file_types: [".py", ".json"]
+    recommendation: "Configure customer-managed KMS key for agent session memory to protect conversation history."
+
+  - id: AWS-AGENT-004
+    name: "Agent tool access not scoped"
+    severity: HIGH
+    category: policy
+    description: "Agent has access to tools/APIs without scope restrictions — risk of unauthorized data access"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'actionGroupExecutor.*lambda|toolChoice.*auto|tool_choice.*any'
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Scope agent tool access to specific allowed operations. Use allowlists for tool names and restrict API endpoints."
+
+  # ==================== RAG POISONING ====================
+  - id: AWS-RAG-001
+    name: "Knowledge base S3 bucket allows write from broad principals"
+    severity: CRITICAL
+    category: storage
+    description: "S3 bucket used for RAG data sources has overly permissive write access — risk of training data and context poisoning"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 's3:(PutObject|DeleteObject|Put\*).*Resource.*\*'
+        file_types: [".json", ".yaml", ".yml", ".py"]
+      - type: regex
+        match: 's3_full_access|AmazonS3FullAccess'
+        file_types: [".py", ".json", ".tf"]
+    recommendation: "Restrict S3 write access to specific IAM roles. Use separate buckets for ingestion vs serving. Enable S3 Object Lock for immutability."
+
+  - id: AWS-RAG-002
+    name: "Knowledge base data source without ingestion validation"
+    severity: HIGH
+    category: storage
+    description: "RAG data sources ingested without content validation or sanitization — risk of indirect prompt injection via poisoned documents"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'start_ingestion_job|StartIngestionJob|sync_knowledge_base'
+        file_types: [".py", ".json"]
+    recommendation: "Implement pre-ingestion document validation: scan for prompt injection patterns, validate file types, and check content integrity before RAG ingestion."
+
+  # ==================== PROMPT INJECTION (INDIRECT) ====================
+  - id: AWS-PROMPT-010
+    name: "Indirect prompt injection via external data sources"
+    severity: CRITICAL
+    category: prompt
+    description: "RAG pipeline fetches external content (S3, SharePoint, web) that could contain hidden prompt injection payloads"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'retrieve_and_generate|RetrieveAndGenerate|retrieve\(|knowledge_base.*query'
+        file_types: [".py", ".json"]
+    recommendation: "Implement output filtering on RAG-retrieved context. Use Bedrock guardrails with PROMPT_ATTACK filter on both input AND retrieval context."
+
+  - id: AWS-PROMPT-011
+    name: "System prompt exposed in client-side code or logs"
+    severity: HIGH
+    category: prompt
+    description: "System prompt string visible in client-facing code, environment variables, or log output"
+    owasp_llm: "LLM07: System Prompt Leakage"
+    patterns:
+      - type: regex
+        match: 'print\(.*system.*prompt|log.*system.*prompt|console\.log.*system.*prompt'
+        file_types: [".py", ".js", ".ts"]
+      - type: regex
+        match: 'SYSTEM_PROMPT\s*=\s*os\.environ'
+        file_types: [".py"]
+    recommendation: "Never log or expose system prompts. Store system prompts server-side and use Bedrock guardrails word filters to block prompt leakage."
+
+  # ==================== POLICY (S3 BUCKET POLICY) ====================
+  - id: AWS-POL-010
+    name: "S3 bucket policy allows GetObject for all principals"
+    severity: CRITICAL
+    category: policy
+    description: "S3 bucket policy grants s3:GetObject to * or broad principals — model weights, training data, or embeddings could be exfiltrated"
+    patterns:
+      - type: regex
+        match: 'Effect.*Allow.*s3:GetObject.*Principal.*\*'
+        file_types: [".json", ".yaml", ".yml"]
+      - type: regex
+        match: 'Principal.*\*.*s3:Get'
+        file_types: [".json", ".yaml"]
+    recommendation: "Restrict S3 bucket policy principals to specific IAM roles/accounts. Never use Principal: * on AI data buckets."
+
+  - id: AWS-POL-011
+    name: "S3 bucket policy allows PutObject from untrusted sources"
+    severity: CRITICAL
+    category: policy
+    description: "S3 bucket allows write from broad principals — risk of model weight tampering or data poisoning"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 'Effect.*Allow.*s3:PutObject.*Principal.*\*'
+        file_types: [".json", ".yaml", ".yml"]
+    recommendation: "Lock down S3 PutObject to specific ingestion pipelines. Enable S3 versioning and Object Lock for tamper protection."
+
+  - id: AWS-POL-012
+    name: "IAM policy allows bedrock:CreateAgent or bedrock:UpdateAgent broadly"
+    severity: HIGH
+    category: policy
+    description: "Broad permission to create or modify Bedrock agents — risk of rogue agent deployment"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'bedrock:(Create|Update|Delete)Agent'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Restrict bedrock:CreateAgent and bedrock:UpdateAgent to CI/CD pipeline roles only. Apply SCP guardrails for production accounts."
+
+  # ==================== AI-SPECIFIC PATTERNS (from Cloud-AI) ====================
+  - id: AWS-AI-001
+    name: "Guardrail PII filter uses ANONYMIZE instead of BLOCK"
+    severity: MEDIUM
+    category: guardrail
+    description: "PII entity action set to ANONYMIZE — still leaks PII patterns to attacker"
+    patterns:
+      - type: regex
+        match: 'action.*ANONYMIZE'
+        file_types: [".py", ".json", ".yaml", ".yml"]
+    recommendation: "Set PII entity action to BLOCK instead of ANONYMIZE. ANONYMIZE replaces values but preserves structure, leaking PII patterns."
+
+  - id: AWS-AI-002
+    name: "Guardrail in DRAFT version used in production"
+    severity: HIGH
+    category: guardrail
+    description: "Guardrail version set to DRAFT — draft guardrails may not be enforced consistently"
+    patterns:
+      - type: regex
+        match: 'guardrailVersion.*DRAFT|guardrail_version.*DRAFT'
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Create a PRODUCTION version of the guardrail and reference it in agent/model invocations."
+
+  - id: AWS-AI-003
+    name: "Bedrock invoke without guardrail identifier"
+    severity: CRITICAL
+    category: guardrail
+    description: "Model invocation or agent call without guardrailIdentifier — all content filters bypassed"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'invoke_model\([^)]*\)(?!.*guardrail)'
+        file_types: [".py"]
+      - type: regex
+        match: 'invoke_agent\([^)]*\)(?!.*guardrail)'
+        file_types: [".py"]
+    recommendation: "Always pass guardrailIdentifier and guardrailVersion when calling invoke_model or invoke_agent."
+
+  - id: AWS-AI-004
+    name: "Context poisoning via unvalidated RAG retrieval"
+    severity: CRITICAL
+    category: prompt
+    description: "RAG context passed directly to model without sanitization — indirect prompt injection vector"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'retrieve_and_generate|RetrieveAndGenerate'
+        file_types: [".py", ".json"]
+    recommendation: "Apply guardrails with PROMPT_ATTACK filter on retrieved RAG context before passing to model. Validate document sources."
+
+  - id: AWS-AI-005
+    name: "apply_guardrail not called on model output"
+    severity: HIGH
+    category: guardrail
+    description: "Model output not validated through apply_guardrail — risk of harmful/PII content in responses"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex_absent
+        match: 'apply_guardrail.*source.*OUTPUT|guardrail.*output'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Call bedrock.apply_guardrail(source='OUTPUT') on model responses to filter harmful content and PII leakage."
+
+  - id: AWS-AI-006
+    name: "SCP not enforcing guardrail requirement"
+    severity: HIGH
+    category: policy
+    description: "No SCP/IAM condition requiring guardrailIdentifier on Bedrock API calls — any role can invoke models without guardrails"
+    patterns:
+      - type: regex_absent
+        match: 'bedrock:guardrailIdentifier|Condition.*Null.*guardrail'
+        scope: file
+        file_types: [".json", ".yaml", ".tf"]
+    recommendation: "Create an SCP with Deny + Condition Null bedrock:guardrailIdentifier=true to enforce guardrails on all Bedrock invocations."
+
+  - id: AWS-AI-007
+    name: "Model output used in code execution"
+    severity: CRITICAL
+    category: prompt
+    description: "AI model output passed to exec(), eval(), or subprocess — code injection risk"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'exec\(.*response|eval\(.*response|subprocess.*response'
+        file_types: [".py"]
+    recommendation: "Never execute model-generated content directly. Validate all outputs against an allowlist before any code execution."
+
+  - id: AWS-AI-008
+    name: "Excessive agency — agent with S3 full access"
+    severity: CRITICAL
+    category: policy
+    description: "AI agent role has AmazonS3FullAccess — can read/write/delete any bucket in the account"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'AmazonS3FullAccess|s3:\*'
+        file_types: [".py", ".json", ".yaml", ".tf"]
+    recommendation: "Restrict agent S3 access to specific buckets and actions (s3:GetObject on KB bucket only)."

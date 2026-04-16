@@ -1,0 +1,568 @@
+# EEG - Azure AI Foundry / Azure OpenAI Security Rules
+# Regex + AST patterns for detecting AI-specific misconfigurations
+
+rules:
+  # ==================== IAM ====================
+  - id: AZ-IAM-001
+    name: "DefaultAzureCredential without scoping"
+    severity: HIGH
+    category: iam
+    description: "DefaultAzureCredential tries ALL auth methods — use explicit credential type"
+    patterns:
+      - type: regex
+        match: 'DefaultAzureCredential\(\s*\)'
+        file_types: [".py"]
+    recommendation: "Use explicit credential types (ManagedIdentityCredential, ClientSecretCredential) instead of DefaultAzureCredential()."
+
+  - id: AZ-IAM-002
+    name: "Client secret in environment variable"
+    severity: CRITICAL
+    category: iam
+    description: "Azure client secret exposed via environment variable"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'AZURE_(CLIENT_SECRET|STORAGE_CLIENT_SECRET)'
+        file_types: [".py", ".env", ".yaml", ".yml", ".json", ".sh"]
+      - type: regex
+        match: 'client_secret\s*=\s*os\.environ'
+        file_types: [".py"]
+    recommendation: "Use Managed Identity instead of client secrets. If secrets are required, use Azure Key Vault."
+
+  - id: AZ-IAM-003
+    name: "Overly broad Azure AI role"
+    severity: HIGH
+    category: iam
+    description: "Roles like Contributor or Owner on AI resources grant excessive permissions"
+    patterns:
+      - type: regex
+        match: '(?i)(Cognitive Services Contributor|roles/contributor|roles/owner).*(?i)(openai|cognitive|aiservices|machinelearning)'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf", ".bicep"]
+      - type: regex
+        match: 'roleDefinitionId.*Contributor'
+        file_types: [".json", ".bicep"]
+    recommendation: "Use Cognitive Services User (read-only inference) instead of Contributor. Apply least privilege."
+
+  - id: AZ-IAM-004
+    name: "Azure CLI credential fallback in production"
+    severity: MEDIUM
+    category: iam
+    description: "AzureCliCredential should not be used in production workloads"
+    patterns:
+      - type: regex
+        match: 'AzureCliCredential\(\)'
+        file_types: [".py"]
+    recommendation: "Use ManagedIdentityCredential for production. AzureCliCredential is for local development only."
+
+  # ==================== GUARDRAILS ====================
+  - id: AZ-GUARD-001
+    name: "Azure OpenAI content filter disabled"
+    severity: CRITICAL
+    category: guardrail
+    description: "Content filtering disabled or set to permissive settings"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: '(?i)content_filter.*disabled'
+        file_types: [".py", ".json", ".yaml", ".yml", ".bicep"]
+      - type: regex
+        match: 'filter_enabled.*[Ff]alse'
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Enable content filtering on all Azure OpenAI deployments with HIGH severity thresholds."
+
+  - id: AZ-GUARD-002
+    name: "Missing Responsible AI content safety"
+    severity: HIGH
+    category: guardrail
+    description: "Azure AI deployment without content safety integration"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex_absent
+        match: 'ContentSafety|content_safety|contentsafety'
+        scope: file
+        file_types: [".py", ".json"]
+    recommendation: "Integrate Azure AI Content Safety for hate, violence, sexual, and self-harm filtering."
+
+  # ==================== MODEL SECURITY ====================
+  - id: AZ-MODEL-001
+    name: "Azure OpenAI API key in code"
+    severity: CRITICAL
+    category: model
+    description: "Hardcoded Azure OpenAI API key instead of managed identity"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'api_key\s*=\s*["\'']+[a-f0-9]{32}["\'']+\s*'
+        file_types: [".py", ".env", ".json", ".yaml"]
+      - type: regex
+        match: 'AZURE_OPENAI_API_KEY\s*=\s*["\'']+[a-f0-9]+'
+        file_types: [".py", ".env", ".sh"]
+    recommendation: "Use Managed Identity (DefaultAzureCredential) instead of API keys for Azure OpenAI."
+
+  - id: AZ-MODEL-002
+    name: "Model endpoint publicly accessible"
+    severity: HIGH
+    category: model
+    description: "Azure ML endpoint without private endpoint or IP restrictions"
+    patterns:
+      - type: regex
+        match: 'public_network_access\s*=\s*["\'']*Enabled'
+        file_types: [".py", ".json", ".yaml", ".bicep", ".tf"]
+      - type: regex
+        match: 'publicNetworkAccess.*Enabled'
+        file_types: [".json", ".bicep"]
+    recommendation: "Disable public network access on Azure ML/OpenAI endpoints. Use private endpoints."
+
+  - id: AZ-MODEL-003
+    name: "Blob storage for model weights without CMK"
+    severity: HIGH
+    category: model
+    description: "Azure Blob container storing model artifacts without customer-managed key"
+    patterns:
+      - type: regex
+        match: 'encryption_scope\s*=\s*None'
+        file_types: [".py"]
+      - type: regex
+        match: 'customer_managed_key.*null'
+        file_types: [".tf", ".json"]
+    recommendation: "Enable CMK encryption for Blob containers storing model weights and training data."
+
+  # ==================== STORAGE ====================
+  - id: AZ-STOR-001
+    name: "Blob container public access"
+    severity: CRITICAL
+    category: storage
+    description: "Blob container with public access level set — risk of data/embedding exposure"
+    patterns:
+      - type: regex
+        match: 'public_access\s*=\s*["\''](blob|container)["\'']\s*'
+        file_types: [".py", ".tf", ".json", ".bicep"]
+      - type: regex
+        match: 'allow_blob_public_access\s*=\s*true'
+        file_types: [".tf"]
+      - type: regex
+        match: 'publicAccess.*["\''](Blob|Container)["\'']\s*'
+        file_types: [".json", ".bicep"]
+    recommendation: "Set public_access = None on all Blob containers used for AI workloads."
+
+  - id: AZ-STOR-002
+    name: "Storage account without HTTPS enforcement"
+    severity: HIGH
+    category: storage
+    description: "Storage account allows HTTP traffic"
+    patterns:
+      - type: regex
+        match: 'enable_https_traffic_only\s*=\s*false'
+        file_types: [".tf"]
+      - type: regex
+        match: 'supportsHttpsTrafficOnly.*false'
+        file_types: [".json", ".bicep"]
+    recommendation: "Enforce HTTPS-only traffic on all storage accounts."
+
+  # ==================== NETWORK ====================
+  - id: AZ-NET-001
+    name: "Public IP on AI workload"
+    severity: HIGH
+    category: network
+    description: "AI compute instance with public IP — risk of model/data exposure"
+    patterns:
+      - type: regex
+        match: 'create_public_ip\s*=\s*true'
+        file_types: [".tf"]
+      - type: regex
+        match: 'publicIpAddress.*true'
+        file_types: [".json", ".bicep"]
+    recommendation: "Disable public IPs on AI workloads. Use Azure Bastion or private endpoints."
+
+  - id: AZ-NET-002
+    name: "Missing private endpoint for AI services"
+    severity: MEDIUM
+    category: network
+    description: "Azure OpenAI/ML services without private endpoint configuration"
+    patterns:
+      - type: regex
+        match: 'create_private_endpoints\s*=\s*false'
+        file_types: [".tf"]
+    recommendation: "Enable private endpoints for all Azure AI services to keep traffic within your VNet."
+
+  # ==================== PROMPT SECURITY ====================
+  - id: AZ-PROMPT-001
+    name: "User input in system message"
+    severity: CRITICAL
+    category: prompt
+    description: "User-controlled data interpolated into system message — prompt injection risk"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'SystemMessage.*f["\'']{1}'
+        file_types: [".py"]
+      - type: regex
+        match: 'system.*message.*\.format\('
+        file_types: [".py"]
+      - type: regex
+        match: 'role.*system.*content.*f["\'']{1}'
+        file_types: [".py"]
+    recommendation: "Never interpolate user input into system messages. Use separate user message roles."
+
+  - id: AZ-PROMPT-002
+    name: "Prompt injection test patterns in code"
+    severity: HIGH
+    category: prompt
+    description: "Prompt injection strings found — ensure these are not in production paths"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: '(?i)(ignore previous instructions|disregard.*prior|reveal your (prompt|instructions)|jailbreak|DAN mode|developer mode|bypass (security|restrictions))'
+        file_types: [".py", ".yaml", ".yml", ".json", ".txt", ".md"]
+    recommendation: "Quarantine prompt injection test strings to dedicated test directories."
+
+  # ==================== SECRETS ====================
+  - id: AZ-SEC-001
+    name: "Azure connection string in source"
+    severity: CRITICAL
+    category: secrets
+    description: "Azure storage or service connection string hardcoded"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'DefaultEndpointsProtocol=https;AccountName=.+;AccountKey=[A-Za-z0-9+/=]+'
+        file_types: [".py", ".json", ".yaml", ".env", ".sh", ".cfg"]
+    recommendation: "Use Managed Identity or store connection strings in Azure Key Vault."
+
+  - id: AZ-SEC-002
+    name: "Hardcoded secret or password"
+    severity: HIGH
+    category: secrets
+    description: "Potential secret or password value in source"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: '(?i)(password|secret|api_key|token)\s*=\s*["\'']+[A-Za-z0-9+/=]{16,}["\'']+\s*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".env", ".tf", ".bicep"]
+    recommendation: "Store secrets in Azure Key Vault. Reference via Key Vault references or Managed Identity."
+
+  # ==================== IAC ====================
+  - id: AZ-IAC-001
+    name: "Terraform state without encryption"
+    severity: HIGH
+    category: iac
+    description: "Terraform azurerm backend without encryption"
+    patterns:
+      - type: regex
+        match: 'backend\s+"azurerm"\s+\{[^}]*(?!use_oidc)'
+        file_types: [".tf"]
+    recommendation: "Use OIDC auth and CMK encryption for Terraform state in Azure Storage."
+
+  - id: AZ-IAC-002
+    name: "Azure ML workspace without CMK"
+    severity: HIGH
+    category: iac
+    description: "Azure Machine Learning workspace without customer-managed encryption key"
+    patterns:
+      - type: regex
+        match: 'azurerm_machine_learning_workspace[^}]*(?!customer_managed_key)'
+        file_types: [".tf"]
+    recommendation: "Configure customer_managed_key_id on Azure ML workspaces for data encryption."
+
+  # ==================== POLICY ====================
+  - id: AZ-POL-001
+    name: "Cognitive Services network rules missing"
+    severity: HIGH
+    category: policy
+    description: "Azure Cognitive Services account without network ACL restrictions"
+    patterns:
+      - type: regex
+        match: 'network_acls.*default_action\s*=\s*["\'']*Allow'
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Set network ACL default_action to Deny and whitelist specific IPs/VNets."
+
+  - id: AZ-POL-002
+    name: "AI Search index without auth"
+    severity: HIGH
+    category: policy
+    description: "Azure AI Search index accessible without API key or RBAC"
+    patterns:
+      - type: regex
+        match: 'disable_local_auth\s*=\s*false'
+        file_types: [".tf"]
+      - type: regex
+        match: 'authOptions.*aadOrApiKey.*aadAuthFailureMode.*http401'
+        file_types: [".json"]
+    recommendation: "Enable Azure AD authentication and disable API key auth for AI Search."
+
+  # ==================== LOGGING & MONITORING ====================
+  - id: AZ-LOG-001
+    name: "Azure OpenAI diagnostic settings not configured"
+    severity: CRITICAL
+    category: logging
+    description: "No diagnostic logging for Azure OpenAI — no audit trail for model invocations, token usage, or content filtering events"
+    patterns:
+      - type: regex_absent
+        match: 'diagnostic_setting|DiagnosticSetting|diagnosticSettings|monitor_diagnostic'
+        scope: file
+        file_types: [".py", ".tf", ".json", ".bicep"]
+    recommendation: "Enable Azure Monitor diagnostic settings on Azure OpenAI resources to capture RequestResponse logs, token metrics, and content filter results."
+
+  - id: AZ-LOG-002
+    name: "Log Analytics workspace not configured for AI services"
+    severity: HIGH
+    category: logging
+    description: "AI services not sending logs to a centralized Log Analytics workspace"
+    patterns:
+      - type: regex_absent
+        match: 'log_analytics_workspace_id|workspaceId|LogAnalytics'
+        scope: file
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Route all Azure AI service diagnostic logs to a Log Analytics workspace for centralized monitoring and alerting."
+
+  - id: AZ-LOG-003
+    name: "Application Insights not integrated with AI workload"
+    severity: MEDIUM
+    category: logging
+    description: "AI application missing Application Insights telemetry — no observability into inference latency, errors, or anomalies"
+    patterns:
+      - type: regex_absent
+        match: 'APPLICATIONINSIGHTS|applicationinsights|app_insights|ApplicationInsights'
+        scope: file
+        file_types: [".py", ".json", ".yaml", ".env"]
+    recommendation: "Integrate Application Insights with AI workloads to monitor inference performance, error rates, and usage patterns."
+
+  # ==================== GUARDRAIL ABSENCE & CONFIGURATION ====================
+  - id: AZ-GUARD-010
+    name: "No content safety integration for Azure AI deployment"
+    severity: CRITICAL
+    category: guardrail
+    description: "Azure AI deployment has no content safety, content filtering, or responsible AI guardrails — model responses are unfiltered"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex_absent
+        match: 'content_filter|ContentFilter|content_safety|ContentSafety|responsible_ai'
+        scope: file
+        file_types: [".py", ".json", ".yaml", ".bicep", ".tf"]
+    recommendation: "Enable Azure AI Content Safety with filters for hate, violence, sexual content, self-harm, and jailbreak detection on all AI deployments."
+
+  - id: AZ-GUARD-011
+    name: "Azure OpenAI content filter at permissive threshold"
+    severity: HIGH
+    category: guardrail
+    description: "Content filter threshold set to allow medium or low severity content through"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'severity.*allow.*(medium|low)|threshold.*(medium|low)'
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Set content filter thresholds to block low-severity and above for all categories (hate, violence, sexual, self-harm)."
+
+  - id: AZ-GUARD-012
+    name: "No jailbreak detection filter"
+    severity: CRITICAL
+    category: guardrail
+    description: "Azure OpenAI deployment missing jailbreak/prompt injection detection filter"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex_absent
+        match: 'jailbreak|Jailbreak|prompt_shield|PromptShield|indirect_attack'
+        scope: file
+        file_types: [".py", ".json", ".yaml", ".bicep"]
+    recommendation: "Enable Prompt Shield (jailbreak detection) on Azure OpenAI to detect direct and indirect prompt injection attempts."
+
+  # ==================== EVALUATION CONFIGURATION ====================
+  - id: AZ-EVAL-001
+    name: "No model evaluation or red-team testing"
+    severity: HIGH
+    category: guardrail
+    description: "No Azure AI evaluation configuration found — model safety, groundedness, and quality not validated"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'evaluate|Evaluation|red_team|groundedness|coherence_score|fluency_score'
+        scope: file
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Use Azure AI Evaluation SDK to run groundedness, relevance, coherence, fluency, and safety evaluations before production deployment."
+
+  # ==================== AGENT SECURITY & EXCESSIVE AGENCY ====================
+  - id: AZ-AGENT-001
+    name: "AI agent with unrestricted tool/function calling"
+    severity: CRITICAL
+    category: policy
+    description: "Azure OpenAI agent can invoke any function/tool without allowlist — excessive agency risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'tool_choice.*auto|function_call.*auto'
+        file_types: [".py", ".json"]
+      - type: regex_absent
+        match: 'allowed_tools|tool_filter|function_whitelist|approved_functions'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Define an explicit allowlist of permitted tools/functions. Use tool_choice='required' with specific function names instead of 'auto'."
+
+  - id: AZ-AGENT-002
+    name: "Agent executing code without sandbox"
+    severity: CRITICAL
+    category: policy
+    description: "AI agent executing generated code without sandboxing or isolation"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'exec\(|eval\(|subprocess\.run.*shell=True|os\.system\('
+        file_types: [".py"]
+    recommendation: "Never execute AI-generated code directly. Use sandboxed execution environments (Azure Container Apps, Docker) with network isolation."
+
+  - id: AZ-AGENT-003
+    name: "Agent with write access to production data"
+    severity: HIGH
+    category: policy
+    description: "AI agent has permissions to modify production databases or storage"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: '(?i)(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER).*(?i)(execute|cursor|conn)'
+        file_types: [".py"]
+    recommendation: "Grant AI agents read-only access to production data. Use separate staging environments for write operations with human approval."
+
+  # ==================== RAG POISONING ====================
+  - id: AZ-RAG-001
+    name: "Azure AI Search index writable by broad principals"
+    severity: CRITICAL
+    category: storage
+    description: "AI Search index used for RAG allows write/update from overly permissive roles — risk of context poisoning"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 'Search Index Data Contributor|search_index_data_contributor'
+        file_types: [".py", ".json", ".yaml", ".tf", ".bicep"]
+    recommendation: "Restrict AI Search index write access to dedicated ingestion pipelines. Use Search Index Data Reader for query workloads."
+
+  - id: AZ-RAG-002
+    name: "RAG data ingestion without content validation"
+    severity: HIGH
+    category: storage
+    description: "Documents ingested into RAG pipeline without validation — risk of indirect prompt injection via poisoned documents"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'upload_documents|merge_or_upload|index_documents|run_indexer'
+        file_types: [".py"]
+    recommendation: "Scan documents for prompt injection patterns before RAG ingestion. Validate file types, content integrity, and source authenticity."
+
+  # ==================== PROMPT INJECTION (INDIRECT) ====================
+  - id: AZ-PROMPT-010
+    name: "Indirect prompt injection via RAG retrieval"
+    severity: CRITICAL
+    category: prompt
+    description: "RAG pipeline retrieves external content that could contain hidden prompt injection payloads in Azure AI Search results"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'search_client\.search|SearchClient|semantic_search|vector_search'
+        file_types: [".py"]
+    recommendation: "Apply output filtering on retrieved RAG context. Use Azure Content Safety to scan retrieval results before passing to the model."
+
+  - id: AZ-PROMPT-011
+    name: "System prompt leakage risk"
+    severity: HIGH
+    category: prompt
+    description: "System prompt exposed in logs, environment variables, or client-facing code"
+    owasp_llm: "LLM07: System Prompt Leakage"
+    patterns:
+      - type: regex
+        match: 'print\(.*system.*message|log.*(system_prompt|system_message)|logger.*(system_prompt|system_message)'
+        file_types: [".py"]
+    recommendation: "Never log system prompts. Store them server-side with access controls. Use Azure Content Safety to detect prompt leakage attempts."
+
+  # ==================== POLICY (SERVICE IMPACT ON AI) ====================
+  - id: AZ-POL-010
+    name: "Managed identity with Contributor on AI resource group"
+    severity: HIGH
+    category: policy
+    description: "Managed identity assigned Contributor role on resource group containing AI services — can modify all AI configurations"
+    patterns:
+      - type: regex
+        match: 'role_definition_name.*Contributor|roleDefinitionId.*Contributor'
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Use granular roles (Cognitive Services User, Azure ML Data Scientist) instead of Contributor on AI resource groups."
+
+  - id: AZ-POL-011
+    name: "Key Vault access policy too permissive for AI workload"
+    severity: HIGH
+    category: policy
+    description: "Key Vault storing AI secrets/keys grants overly broad access (get, list, set, delete)"
+    patterns:
+      - type: regex
+        match: 'key_permissions.*all|secret_permissions.*all|certificate_permissions.*all'
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Restrict Key Vault permissions to Get and List only for AI workload identities. Use separate vaults for AI secrets."
+
+  # ==================== AI-SPECIFIC PATTERNS (from Cloud-AI) ====================
+  - id: AZ-AI-001
+    name: "Jailbreak detection not handling filter results"
+    severity: HIGH
+    category: guardrail
+    description: "Azure OpenAI response does not check content_filter_results for jailbreak detection"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex_absent
+        match: 'content_filter_results.*jailbreak|jailbreak.*filtered'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Check response.body.content_filters[0].content_filter_results.jailbreak.filtered to detect and handle jailbreak attempts."
+
+  - id: AZ-AI-002
+    name: "No red-team safety evaluation configured"
+    severity: HIGH
+    category: guardrail
+    description: "No Azure AI red-team testing found — model safety not validated against adversarial attacks"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'RedTeam|red_team|AttackStrategy|RiskCategory|safety_eval'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Use Azure AI Red Team SDK with RiskCategory (Violence, HateUnfairness, Sexual, SelfHarm) and multiple AttackStrategies."
+
+  - id: AZ-AI-003
+    name: "Azure AI local auth not disabled"
+    severity: HIGH
+    category: iam
+    description: "Cognitive Services account allows API key authentication — use Managed Identity instead"
+    patterns:
+      - type: regex
+        match: 'disableLocalAuth.*false|disable_local_auth.*false'
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Set disableLocalAuth=true on Cognitive Services accounts. Use Managed Identity for all Azure AI authentication."
+
+  - id: AZ-AI-004
+    name: "Model output used in code execution"
+    severity: CRITICAL
+    category: prompt
+    description: "AI model output passed to exec(), eval(), or subprocess — code injection risk"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'exec\(.*response|eval\(.*response|subprocess.*response|shell=True.*response'
+        file_types: [".py"]
+    recommendation: "Never execute model-generated content. Validate outputs against allowlists before any code execution or API calls."
+
+  - id: AZ-AI-005
+    name: "Cosmos DB for AI without AAD-only auth"
+    severity: HIGH
+    category: iam
+    description: "Cosmos DB used by AI workload allows connection string auth — use Azure AD only"
+    patterns:
+      - type: regex
+        match: 'disableLocalAuth.*false|disable_local_auth.*false'
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Set disableLocalAuth=true on Cosmos DB accounts used by AI agents. Use SystemAssigned managed identity."
+
+  - id: AZ-AI-006
+    name: "Excessive agency — agent with Contributor role"
+    severity: CRITICAL
+    category: policy
+    description: "AI agent managed identity has Contributor role — can modify all resources in the scope"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'Contributor.*principalId|role.*Contributor.*ServicePrincipal'
+        file_types: [".tf", ".json", ".bicep"]
+    recommendation: "Use Cognitive Services User (read-only inference) or custom roles with minimal permissions for AI agent identities."

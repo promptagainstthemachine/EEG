@@ -1,0 +1,595 @@
+# EEG - GCP Vertex AI / Gemini Security Rules
+# Regex + AST patterns for detecting AI-specific misconfigurations
+
+rules:
+  # ==================== IAM ====================
+  - id: GCP-IAM-001
+    name: "Overly broad Vertex AI role"
+    severity: CRITICAL
+    category: iam
+    description: "roles/aiplatform.admin or roles/editor on Vertex AI resources"
+    patterns:
+      - type: regex
+        match: 'roles/aiplatform\.admin'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+      - type: regex
+        match: 'roles/editor'
+        file_types: [".tf", ".yaml", ".json"]
+    recommendation: "Use roles/aiplatform.user for inference or create custom roles with minimal permissions."
+
+  - id: GCP-IAM-002
+    name: "Service account key file in code"
+    severity: CRITICAL
+    category: iam
+    description: "GOOGLE_APPLICATION_CREDENTIALS pointing to a key file — use Workload Identity"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'GOOGLE_APPLICATION_CREDENTIALS'
+        file_types: [".py", ".env", ".yaml", ".yml", ".sh", ".json", ".tf"]
+      - type: regex
+        match: 'service_account.*\.json'
+        file_types: [".py", ".yaml", ".yml", ".sh", ".env"]
+    recommendation: "Use Workload Identity Federation instead of service account key files."
+
+  - id: GCP-IAM-003
+    name: "allUsers or allAuthenticatedUsers binding"
+    severity: CRITICAL
+    category: iam
+    description: "IAM binding grants access to all users — public exposure"
+    patterns:
+      - type: regex
+        match: 'allUsers|allAuthenticatedUsers'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Remove allUsers/allAuthenticatedUsers bindings. Grant access to specific service accounts."
+
+  - id: GCP-IAM-004
+    name: "Broad BigQuery permissions for AI pipeline"
+    severity: HIGH
+    category: iam
+    description: "roles/bigquery.admin used for AI data pipeline — overly permissive"
+    patterns:
+      - type: regex
+        match: 'roles/bigquery\.admin'
+        file_types: [".py", ".json", ".yaml", ".yml", ".tf"]
+    recommendation: "Use roles/bigquery.dataViewer or roles/bigquery.jobUser for AI data access."
+
+  # ==================== GUARDRAILS ====================
+  - id: GCP-GUARD-001
+    name: "Vertex AI safety settings disabled"
+    severity: CRITICAL
+    category: guardrail
+    description: "Safety settings set to BLOCK_NONE — no content filtering"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'BLOCK_NONE'
+        file_types: [".py", ".json", ".yaml"]
+      - type: regex
+        match: 'block_none'
+        file_types: [".py"]
+    recommendation: "Use BLOCK_MEDIUM_AND_ABOVE or BLOCK_LOW_AND_ABOVE for all safety categories."
+
+  - id: GCP-GUARD-002
+    name: "Missing safety settings on Gemini model"
+    severity: HIGH
+    category: guardrail
+    description: "GenerativeModel initialized without safety_settings parameter"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'GenerativeModel\([^)]*\)(?!.*safety_settings)'
+        file_types: [".py"]
+    recommendation: "Always configure safety_settings when initializing Gemini/Vertex AI GenerativeModel."
+
+  # ==================== MODEL SECURITY ====================
+  - id: GCP-MODEL-001
+    name: "Vertex AI endpoint without VPC peering"
+    severity: HIGH
+    category: model
+    description: "Model endpoint publicly accessible without VPC Service Controls"
+    patterns:
+      - type: regex
+        match: 'deploy_model\([^)]*(?!network=)'
+        file_types: [".py"]
+    recommendation: "Deploy Vertex AI endpoints within a VPC using private endpoints."
+
+  - id: GCP-MODEL-002
+    name: "Model output used directly in URL/SQL"
+    severity: CRITICAL
+    category: model
+    description: "Model-generated content used directly in URL construction or SQL without sanitization"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'response\.candidates\[0\].*url.*='
+        file_types: [".py"]
+      - type: regex
+        match: 'function_calls\[0\]\.args.*\burl\b'
+        file_types: [".py"]
+    recommendation: "Always validate and sanitize model outputs before using in URLs, SQL, or API calls."
+
+  - id: GCP-MODEL-003
+    name: "vertexai.init without project validation"
+    severity: MEDIUM
+    category: model
+    description: "vertexai.init() called with unvalidated project ID — silent failure possible"
+    patterns:
+      - type: regex
+        match: 'vertexai\.init\(\s*project\s*=\s*os\.environ'
+        file_types: [".py"]
+    recommendation: "Validate PROJECT_ID is not None/empty before calling vertexai.init()."
+
+  # ==================== STORAGE ====================
+  - id: GCP-STOR-001
+    name: "GCS bucket publicly accessible"
+    severity: CRITICAL
+    category: storage
+    description: "GCS bucket with public ACL — risk of training data or model weight exposure"
+    patterns:
+      - type: regex
+        match: 'predefined_acl\s*=\s*["\''](publicRead|publicReadWrite)["\'']\s*'
+        file_types: [".py", ".tf"]
+      - type: regex
+        match: 'allUsers.*storage\.objectViewer'
+        file_types: [".tf", ".json", ".yaml"]
+    recommendation: "Use uniform bucket-level access and remove public ACLs on AI data buckets."
+
+  - id: GCP-STOR-002
+    name: "GCS bucket without CMEK"
+    severity: HIGH
+    category: storage
+    description: "GCS bucket storing AI artifacts without customer-managed encryption"
+    patterns:
+      - type: regex
+        match: 'default_kms_key_name\s*=\s*""'
+        file_types: [".tf"]
+      - type: regex
+        match: 'google_storage_bucket[^}]*(?!encryption)'
+        file_types: [".tf"]
+    recommendation: "Enable CMEK encryption on GCS buckets storing model artifacts and training data."
+
+  # ==================== NETWORK ====================
+  - id: GCP-NET-001
+    name: "Firewall rule allows all ingress"
+    severity: HIGH
+    category: network
+    description: "Firewall allows 0.0.0.0/0 ingress to AI workload"
+    patterns:
+      - type: regex
+        match: 'source_ranges.*0\.0\.0\.0/0'
+        file_types: [".tf"]
+      - type: regex
+        match: 'sourceRanges.*0\.0\.0\.0/0'
+        file_types: [".json", ".yaml"]
+    recommendation: "Restrict ingress to specific IP ranges. Use IAP for SSH/RDP access to AI VMs."
+
+  - id: GCP-NET-002
+    name: "VPC Service Controls not applied"
+    severity: MEDIUM
+    category: network
+    description: "Vertex AI project without VPC Service Controls perimeter"
+    patterns:
+      - type: regex
+        match: 'google_access_context_manager_service_perimeter.*(?!aiplatform\.googleapis\.com)'
+        file_types: [".tf"]
+    recommendation: "Apply VPC Service Controls perimeter including aiplatform.googleapis.com."
+
+  # ==================== PROMPT SECURITY ====================
+  - id: GCP-PROMPT-001
+    name: "User input in generate_content prompt"
+    severity: CRITICAL
+    category: prompt
+    description: "User-controlled data passed directly to generate_content via f-string"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'generate_content\(\s*f["\'']{1}'
+        file_types: [".py"]
+      - type: regex
+        match: 'generate_content\([^)]*\.format\('
+        file_types: [".py"]
+    recommendation: "Sanitize user inputs before passing to generate_content(). Use input validation and content filtering."
+
+  - id: GCP-PROMPT-002
+    name: "Prompt injection patterns detected"
+    severity: HIGH
+    category: prompt
+    description: "Known prompt injection strings found in codebase"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: '(?i)(ignore previous instructions|disregard.*prior|reveal your (prompt|instructions)|jailbreak|DAN mode|developer mode|bypass (security|restrictions))'
+        file_types: [".py", ".yaml", ".yml", ".json", ".txt", ".md"]
+    recommendation: "Remove prompt injection strings from production code. Isolate in test directories."
+
+  # ==================== SECRETS ====================
+  - id: GCP-SEC-001
+    name: "GCP API key hardcoded"
+    severity: CRITICAL
+    category: secrets
+    description: "Google API key hardcoded in source"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'AIza[0-9A-Za-z_-]{35}'
+        file_types: [".py", ".json", ".yaml", ".yml", ".env", ".sh", ".toml"]
+    recommendation: "Use Application Default Credentials or service accounts instead of API keys."
+
+  - id: GCP-SEC-002
+    name: "Hardcoded secret or password"
+    severity: HIGH
+    category: secrets
+    description: "Potential secret or password value in source"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: '(?i)(password|secret|api_key|private_key)\s*=\s*["\'']+[A-Za-z0-9+/=]{16,}["\'']+\s*'
+        file_types: [".py", ".json", ".yaml", ".yml", ".env", ".tf", ".toml"]
+    recommendation: "Store secrets in GCP Secret Manager. Reference via secret versions."
+
+  # ==================== IAC ====================
+  - id: GCP-IAC-001
+    name: "Terraform GCS backend without encryption"
+    severity: HIGH
+    category: iac
+    description: "Terraform state stored in GCS without CMEK"
+    patterns:
+      - type: regex
+        match: 'backend\s+"gcs"\s+\{[^}]*(?!encryption_key)'
+        file_types: [".tf"]
+    recommendation: "Set encryption_key in GCS backend configuration for Terraform state."
+
+  - id: GCP-IAC-002
+    name: "Compute instance with external IP for AI"
+    severity: HIGH
+    category: iac
+    description: "AI compute instance provisioned with external IP"
+    patterns:
+      - type: regex
+        match: 'access_config\s*\{'
+        file_types: [".tf"]
+    recommendation: "Remove access_config blocks to prevent external IP assignment on AI VMs."
+
+  # ==================== POLICY ====================
+  - id: GCP-POL-001
+    name: "Organization policy allows AI API for all"
+    severity: HIGH
+    category: policy
+    description: "AI Platform API not restricted in organization constraints"
+    patterns:
+      - type: regex
+        match: 'aiplatform\.googleapis\.com.*allowed'
+        file_types: [".tf", ".json", ".yaml"]
+    recommendation: "Use organization policy constraints to restrict AI Platform API access to approved projects."
+
+  - id: GCP-POL-002
+    name: "Vertex AI notebook without Secure Boot"
+    severity: MEDIUM
+    category: policy
+    description: "Vertex AI Workbench notebook without Shielded VM features"
+    patterns:
+      - type: regex
+        match: 'enable_secure_boot\s*=\s*false'
+        file_types: [".tf"]
+    recommendation: "Enable Secure Boot, vTPM, and Integrity Monitoring on Vertex AI notebooks."
+
+  # ==================== LOGGING & MONITORING ====================
+  - id: GCP-LOG-001
+    name: "Vertex AI audit logging not enabled"
+    severity: CRITICAL
+    category: logging
+    description: "No audit logging configured for Vertex AI API calls — no trail for model invocations, endpoint deployments, or data access"
+    patterns:
+      - type: regex_absent
+        match: 'audit_log|AuditLog|logging_config|google_project_iam_audit_config'
+        scope: file
+        file_types: [".tf", ".py", ".json", ".yaml"]
+    recommendation: "Enable Data Access audit logs for aiplatform.googleapis.com to track all Vertex AI API calls including model predictions."
+
+  - id: GCP-LOG-002
+    name: "Cloud Logging not integrated with AI workload"
+    severity: HIGH
+    category: logging
+    description: "AI application not sending logs to Cloud Logging — no centralized observability"
+    patterns:
+      - type: regex_absent
+        match: 'google.cloud.logging|cloud_logging|google_logging|CloudLogging'
+        scope: file
+        file_types: [".py", ".yaml", ".json"]
+    recommendation: "Integrate Cloud Logging with Vertex AI workloads. Enable prediction request/response logging on model endpoints."
+
+  - id: GCP-LOG-003
+    name: "Vertex AI endpoint prediction logging disabled"
+    severity: HIGH
+    category: logging
+    description: "Model endpoint deployed without prediction request/response logging"
+    patterns:
+      - type: regex
+        match: 'enable_access_logging\s*=\s*False|enable_request_response_logging\s*=\s*False'
+        file_types: [".py", ".tf"]
+    recommendation: "Enable access logging and request/response logging on Vertex AI endpoints for monitoring and debugging."
+
+  # ==================== GUARDRAIL ABSENCE & CONFIGURATION ====================
+  - id: GCP-GUARD-010
+    name: "No safety settings on any Gemini/Vertex AI model"
+    severity: CRITICAL
+    category: guardrail
+    description: "No safety_settings found in project — Gemini models deployed without content filtering for harm, hate, sexual content, or dangerous content"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex_absent
+        match: 'safety_settings|SafetySetting|HarmCategory|HarmBlockThreshold'
+        scope: file
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Configure safety_settings on all GenerativeModel instances with BLOCK_MEDIUM_AND_ABOVE for HARM_CATEGORY_HARASSMENT, HATE_SPEECH, SEXUALLY_EXPLICIT, and DANGEROUS_CONTENT."
+
+  - id: GCP-GUARD-011
+    name: "Safety settings set to BLOCK_ONLY_HIGH"
+    severity: HIGH
+    category: guardrail
+    description: "Safety threshold too permissive — allows medium-severity harmful content through"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'BLOCK_ONLY_HIGH'
+        file_types: [".py", ".json"]
+    recommendation: "Use BLOCK_MEDIUM_AND_ABOVE or BLOCK_LOW_AND_ABOVE for comprehensive content safety."
+
+  - id: GCP-GUARD-012
+    name: "Missing grounding configuration"
+    severity: MEDIUM
+    category: guardrail
+    description: "Gemini model used without grounding (Google Search or Vertex AI Search) — increased hallucination risk"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'grounding|Grounding|google_search_retrieval|GroundingSource'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Enable grounding with Google Search or Vertex AI Search to reduce hallucinations and improve factual accuracy."
+
+  # ==================== EVALUATION CONFIGURATION ====================
+  - id: GCP-EVAL-001
+    name: "No model evaluation pipeline configured"
+    severity: HIGH
+    category: guardrail
+    description: "No Vertex AI model evaluation found — model accuracy, safety, and robustness not benchmarked"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'evaluate|EvaluationJob|model_evaluation|eval_task|rouge_score|bleu_score'
+        scope: file
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Use Vertex AI Model Evaluation to benchmark model safety, groundedness, coherence, and fluency before production deployment."
+
+  # ==================== AGENT SECURITY & EXCESSIVE AGENCY ====================
+  - id: GCP-AGENT-001
+    name: "Vertex AI agent with unrestricted function calling"
+    severity: CRITICAL
+    category: policy
+    description: "Gemini agent allows automatic function/tool calling without explicit allowlist — excessive agency risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'tool_config.*AUTO|function_calling_config.*ANY|allowed_function_names.*\[\]'
+        file_types: [".py", ".json"]
+    recommendation: "Set function_calling_config mode to NONE or specify explicit allowed_function_names to restrict agent tool access."
+
+  - id: GCP-AGENT-002
+    name: "Agent executing unvalidated function call results"
+    severity: CRITICAL
+    category: policy
+    description: "Model function call output used directly without validation — risk of code injection or unauthorized actions"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'function_calls\[.*\]\.args.*(?:exec|eval|subprocess|os\.system|requests\.)'
+        file_types: [".py"]
+      - type: regex
+        match: 'function_call.*response.*=.*eval\('
+        file_types: [".py"]
+    recommendation: "Validate all function call arguments from the model against an allowlist before execution. Never pass model output to exec/eval."
+
+  - id: GCP-AGENT-003
+    name: "Agent code execution without sandbox"
+    severity: CRITICAL
+    category: policy
+    description: "AI agent executing code in the same environment as the application — no isolation"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'exec\(|eval\(|subprocess\.run.*shell=True|os\.system\('
+        file_types: [".py"]
+    recommendation: "Execute AI-generated code in sandboxed environments (Cloud Run, gVisor containers) with restricted network access."
+
+  # ==================== RAG POISONING ====================
+  - id: GCP-RAG-001
+    name: "GCS bucket for RAG data allows broad write access"
+    severity: CRITICAL
+    category: storage
+    description: "GCS bucket used for RAG document storage has overly permissive write IAM — risk of context poisoning"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 'storage\.objectCreator.*allUsers|storage\.objectAdmin.*allAuthenticatedUsers|roles/storage\.admin'
+        file_types: [".tf", ".json", ".yaml"]
+      - type: regex
+        match: 'roles/storage\.objectAdmin'
+        file_types: [".tf", ".py", ".json"]
+    recommendation: "Restrict GCS write access to dedicated ingestion service accounts. Enable Object Versioning and retention policies for tamper protection."
+
+  - id: GCP-RAG-002
+    name: "Vertex AI Search data store without access controls"
+    severity: HIGH
+    category: storage
+    description: "Vertex AI Search data store ingesting documents without source validation"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'import_documents|ImportDocuments|create_data_store|ingest'
+        file_types: [".py", ".json"]
+    recommendation: "Validate document content and source before ingestion into Vertex AI Search. Scan for prompt injection payloads in documents."
+
+  # ==================== PROMPT INJECTION (INDIRECT) ====================
+  - id: GCP-PROMPT-010
+    name: "Indirect prompt injection via RAG retrieval"
+    severity: CRITICAL
+    category: prompt
+    description: "Vertex AI Search retrieval results passed directly to model without filtering — risk of executing injected prompts from documents"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'search_client\.search|VertexAISearch|vertex_ai_search|retrieval_qa'
+        file_types: [".py"]
+    recommendation: "Filter and sanitize RAG retrieval results before passing to the model. Apply safety settings on the model to catch injected prompts."
+
+  - id: GCP-PROMPT-011
+    name: "System instruction leakage risk"
+    severity: HIGH
+    category: prompt
+    description: "System instruction exposed in logs, env vars, or client code — attacker can reverse-engineer prompt logic"
+    owasp_llm: "LLM07: System Prompt Leakage"
+    patterns:
+      - type: regex
+        match: 'print\(.*system_instruction|log.*system_instruction|logger.*system_instruction'
+        file_types: [".py"]
+      - type: regex
+        match: 'SYSTEM_INSTRUCTION\s*=\s*os\.environ'
+        file_types: [".py"]
+    recommendation: "Never log or expose system instructions. Store them server-side with strict access controls."
+
+  # ==================== POLICY (SERVICE IMPACT ON AI) ====================
+  - id: GCP-POL-010
+    name: "Service account with Owner/Editor on AI project"
+    severity: CRITICAL
+    category: policy
+    description: "Service account has roles/owner or roles/editor on project containing Vertex AI — can modify all AI resources"
+    patterns:
+      - type: regex
+        match: 'roles/(owner|editor)'
+        file_types: [".tf", ".json", ".yaml"]
+    recommendation: "Use least-privilege roles (roles/aiplatform.user, roles/aiplatform.viewer) instead of Owner/Editor on AI projects."
+
+  - id: GCP-POL-011
+    name: "Vertex AI model registry publicly accessible"
+    severity: HIGH
+    category: policy
+    description: "Model artifacts in Vertex AI Model Registry accessible without authentication"
+    patterns:
+      - type: regex
+        match: 'serving_container.*allow_unauthenticated|allow.*unauth.*predict'
+        file_types: [".py", ".tf", ".json"]
+    recommendation: "Require authentication on all Vertex AI model endpoints. Use IAM conditions to restrict access to specific service accounts."
+
+  - id: GCP-POL-012
+    name: "BigQuery dataset for AI training data with broad access"
+    severity: HIGH
+    category: policy
+    description: "BigQuery dataset used for AI training/evaluation grants access to allUsers or allAuthenticatedUsers"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 'bigquery.*allUsers|bigquery.*allAuthenticatedUsers'
+        file_types: [".tf", ".json"]
+    recommendation: "Restrict BigQuery dataset access to specific service accounts and data engineering roles."
+
+  # ==================== AI-SPECIFIC PATTERNS (from Cloud-AI) ====================
+  - id: GCP-AI-001
+    name: "Safety threshold set to OFF"
+    severity: CRITICAL
+    category: guardrail
+    description: "Gemini safety settings use threshold='OFF' — all content filtering disabled for this harm category"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'threshold.*OFF|threshold.*"OFF"'
+        file_types: [".py", ".json", ".yaml"]
+    recommendation: "Never use threshold=OFF in production. Use BLOCK_MEDIUM_AND_ABOVE or BLOCK_LOW_AND_ABOVE for all harm categories."
+
+  - id: GCP-AI-002
+    name: "Multiple safety categories disabled simultaneously"
+    severity: CRITICAL
+    category: guardrail
+    description: "BLOCK_NONE or OFF applied across multiple harm categories — model is completely unguarded"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: 'BLOCK_NONE.*BLOCK_NONE|OFF.*\n.*OFF'
+        file_types: [".py"]
+    recommendation: "Enable safety settings on ALL harm categories (HATE_SPEECH, DANGEROUS_CONTENT, SEXUALLY_EXPLICIT, HARASSMENT)."
+
+  - id: GCP-AI-003
+    name: "response_validation disabled"
+    severity: HIGH
+    category: guardrail
+    description: "Vertex AI response_validation=False — model outputs not checked for safety"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'response_validation\s*=\s*False'
+        file_types: [".py"]
+    recommendation: "Set response_validation=True to enforce safety checks on model outputs."
+
+  - id: GCP-AI-004
+    name: "Notebook with public IP and downloads enabled"
+    severity: CRITICAL
+    category: network
+    description: "Vertex AI notebook instance has public IP and file downloads not disabled — data exfiltration risk"
+    patterns:
+      - type: regex
+        match: 'no_public_ip\s*=\s*false'
+        file_types: [".tf", ".py"]
+      - type: regex
+        match: 'disable_public_ip\s*=\s*false'
+        file_types: [".tf"]
+    recommendation: "Set no_public_ip=true and notebook-disable-downloads=true on all Vertex AI notebooks."
+
+  - id: GCP-AI-005
+    name: "Model output used in code execution"
+    severity: CRITICAL
+    category: prompt
+    description: "AI model output passed to exec(), eval(), or subprocess — code injection risk"
+    owasp_llm: "LLM02: Insecure Output Handling"
+    patterns:
+      - type: regex
+        match: 'exec\(.*response|eval\(.*response|subprocess.*response'
+        file_types: [".py"]
+    recommendation: "Never execute model-generated content directly. Validate all outputs against an allowlist."
+
+  - id: GCP-AI-006
+    name: "Grounding not configured for Gemini model"
+    severity: MEDIUM
+    category: guardrail
+    description: "Gemini model used without Google Search grounding — higher hallucination risk"
+    owasp_llm: "LLM09: Overreliance"
+    patterns:
+      - type: regex_absent
+        match: 'GoogleSearchRetrieval|google_search_retrieval|grounding|DynamicRetrievalConfig'
+        scope: file
+        file_types: [".py"]
+    recommendation: "Enable grounding with GoogleSearchRetrieval or Vertex AI Search to reduce hallucinations."
+
+  - id: GCP-AI-007
+    name: "Excessive agency — service account with Editor role"
+    severity: CRITICAL
+    category: policy
+    description: "AI workload service account has roles/editor — can modify all resources in the project"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'roles/editor.*serviceAccount|member.*serviceAccount.*roles/editor'
+        file_types: [".tf", ".json", ".yaml"]
+    recommendation: "Use roles/aiplatform.user or custom roles with minimal permissions for AI workload service accounts."
+
+  - id: GCP-AI-008
+    name: "VPC Service Controls not restricting AI APIs"
+    severity: HIGH
+    category: network
+    description: "No VPC Service Controls perimeter found restricting aiplatform.googleapis.com"
+    patterns:
+      - type: regex_absent
+        match: 'aiplatform.googleapis.com.*restricted|restricted_services.*aiplatform'
+        scope: file
+        file_types: [".tf"]
+    recommendation: "Add aiplatform.googleapis.com to VPC Service Controls restricted services perimeter."
