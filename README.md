@@ -230,28 +230,48 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed component diagrams and exten
 ## Project Structure
 ```
 eeg/
-├── cli.py                  # CLI entry point (argparse)
+├── __init__.py
+├── __main__.py             # python -m eeg entry point
+├── cli.py                  # CLI argument parsing & orchestration
 ├── collector.py            # Finding aggregation & deduplication
+├── config.py               # YAML config loader for dynamic checks
 ├── detectors/              # 10 static analysis detectors
 │   ├── base.py             # AST + regex scanning engine
 │   ├── iam.py, storage.py, guardrail.py, model.py
 │   ├── network.py, iac.py, policy.py, prompt.py
-│   ├── secrets.py, logging_monitor.py
+│   └── secrets.py, logging_monitor.py
 ├── auth_scanner/           # Authenticated live audit
-│   ├── aws_scanner.py      # Bedrock guardrails, agents, KBs, logging, IAM
-│   ├── azure_scanner.py    # Cognitive Services, deployments, content filters
-│   └── gcp_scanner.py      # Vertex AI endpoints, models, CMEK
+│   ├── aws_scanner.py      # Bedrock guardrails, agents, KBs, logging
+│   ├── azure_scanner.py    # Cognitive Services, content filters
+│   ├── gcp_scanner.py      # Vertex AI endpoints, models, CMEK
+│   └── check_runner.py     # Config-driven check execution
 ├── vuln_manager/           # CVE tracking
 │   ├── cve_fetcher.py      # NVD API client with full descriptions
 │   └── dependency_parser.py # 70+ AI package registry
-├── utils/                  # Crawler, threading, reports, auth
-│   ├── repocrawler.py, threadpoolexecutor.py
-│   ├── htmlreport.py, jsonreport.py, csvreport.py, auth.py
+├── utils/                  # Shared utilities
+│   ├── auth.py             # Cloud credential discovery
 │   ├── cloud_console.py    # Cloud shell detection & CLI auth
-└── rules/                  # 139 YAML detection rules
-    ├── aws/rule.yaml       # 50 rules (Bedrock, SageMaker)
-    ├── azure/rule.yaml     # 43 rules (OpenAI, Foundry, AI Search)
-    └── gcp/rule.yaml       # 46 rules (Vertex AI, Gemini)
+│   ├── repocrawler.py      # File system traversal
+│   ├── threadpoolexecutor.py # Parallel scanning
+│   ├── htmlreport.py, jsonreport.py, csvreport.py
+└── rules/
+    ├── static/             # Static analysis rules (YAML)
+    │   ├── aws_static.yaml
+    │   ├── azure_static.yaml
+    │   └── gcp_static.yaml
+    └── dynamic/            # Live audit check configs
+        ├── aws_dynamic.yaml
+        ├── azure_dynamic.yaml
+        ├── gcp_dynamic.yaml
+        └── thresholds.yaml
+
+tests/                      # pytest test suite
+├── conftest.py             # Shared fixtures
+├── test_cli.py
+├── test_collector.py
+├── test_detectors.py
+├── test_utils.py
+└── test_vuln_manager.py
 ```
 
 ---
