@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eeg-security"
-version = "1.0.0"
+version = "2.0.0"
 description = "Extensive Exposure Guard — Multi-Cloud AI Security & Vulnerability Management Framework"
 readme = "README.md"
 license = "MIT"

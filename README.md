@@ -147,6 +147,8 @@ Connects to your cloud account and audits **live resources** — modeled after t
 * **Azure:** Audits Cognitive Services accounts, deployments, content filters, network ACLs, local auth
 * **GCP:** Audits Vertex AI endpoints, models, CMEK encryption, private networking
 
+**Permission-Safe Scanning:** EEG gracefully handles permission errors without breaking the scan. If your credentials lack access to certain resources, those checks are skipped and reported in the summary — the scan continues and completes successfully with partial results.
+
 ### CVE Fetching (`--vm true`, default)
 Parses `requirements.txt`, `pyproject.toml`, `setup.py`, `Pipfile`, and `package.json` for AI dependencies, then queries NVD for known vulnerabilities with full descriptions and remediation steps.
 
@@ -179,6 +181,9 @@ Reports are auto-named: `eeg-report-{env}-{appname}-{HH-MM-SS-DDMMYYYY}.{ext}`
 
 ### HTML
 Self-contained dark-themed report with severity badges, code snippets, and recommendations. Open directly in a browser.
+
+### CSV
+Flat format for spreadsheet analysis and SIEM ingestion. Includes findings table plus summary metadata as comment rows.
 
 ---
 
@@ -230,7 +235,8 @@ eeg/
 │   └── dependency_parser.py # 70+ AI package registry
 ├── utils/                  # Crawler, threading, reports, auth
 │   ├── repocrawler.py, threadpoolexecutor.py
-│   ├── htmlreport.py, jsonreport.py, auth.py
+│   ├── htmlreport.py, jsonreport.py, csvreport.py, auth.py
+│   ├── cloud_console.py    # Cloud shell detection & CLI auth
 └── rules/                  # 139 YAML detection rules
     ├── aws/rule.yaml       # 50 rules (Bedrock, SageMaker)
     ├── azure/rule.yaml     # 43 rules (OpenAI, Foundry, AI Search)
