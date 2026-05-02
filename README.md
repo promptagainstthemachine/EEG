@@ -1,8 +1,9 @@
 # `EEG (Extensive Exposure Guard)`<br> MultiCloud AI Security and Vulnerability Management Framework
 ![](asset/logo.png)
 
-[![PyPI](https://img.shields.io/pypi/v/eeg-security?v=2)](https://pypi.org/project/eeg-security/)
-[![Python](https://img.shields.io/pypi/pyversions/eeg-security?v=2)](https://pypi.org/project/eeg-security/)
+[![PyPI](https://img.shields.io/pypi/v/eeg-security)](https://pypi.org/project/eeg-security/)
+[![Python](https://img.shields.io/pypi/pyversions/eeg-security)](https://pypi.org/project/eeg-security/)
+[![Tests](https://github.com/findthehead/EEG/actions/workflows/publish.yml/badge.svg)](https://github.com/findthehead/EEG/actions/workflows/publish.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **AI-First Cloud Security.** In a market with hundreds of cloud security tools, none focus on AI workloads. EEG is the go-to DevSecOps tool for developers to catch AI-specific vulnerabilities before pushing to production.
@@ -26,6 +27,13 @@ pip install eeg-security[aws]     # + boto3 for Bedrock/SageMaker live audit
 pip install eeg-security[azure]   # + azure-identity for OpenAI/Foundry live audit
 pip install eeg-security[gcp]     # + google-cloud-aiplatform for Vertex AI live audit
 pip install eeg-security[all]     # All clouds
+```
+
+For development:
+```bash
+git clone https://github.com/findthehead/EEG.git
+cd EEG
+pip install -e ".[dev]"
 ```
 
 ---
@@ -212,6 +220,9 @@ Flat format for spreadsheet analysis and SIEM ingestion. Includes findings table
 ---
 
 ## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed component diagrams and extension guide.
+
 ![](asset/architecture.png)
 
 ---
@@ -245,8 +256,22 @@ eeg/
 
 ---
 
+## Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# With coverage
+pytest tests/ --cov=eeg --cov-report=html
+```
+
+---
+
 ## Contributing
 Pull requests welcome. For major changes, open an issue first.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for codebase overview and extension points.
 
 ## License
 [MIT](LICENSE)
