@@ -1,0 +1,381 @@
+# EEG - Global Thresholds Configuration
+# These values are used across all cloud providers for consistent severity assessment
+
+# Guardrail/Content Filter Thresholds
+guardrail:
+  # Minimum acceptable filter strength (HIGH, MEDIUM, LOW, NONE)
+  min_input_strength: "HIGH"
+  min_output_strength: "HIGH"
+  
+  # Required filter types (any missing = finding)
+  required_filters:
+    - PROMPT_ATTACK
+    - HATE
+    - VIOLENCE
+    - SEXUAL
+    - SELF_HARM
+    - HARASSMENT
+    - DANGEROUS_CONTENT
+  
+  # PII handling - BLOCK vs ANONYMIZE
+  pii_action: "BLOCK"  # Preferred action for sensitive PII
+  
+  # Sensitive PII types that should be blocked (not anonymized)
+  sensitive_pii_types:
+    - AWS_ACCESS_KEY
+    - AWS_SECRET_KEY
+    - CREDIT_CARD
+    - SSN
+    - PASSWORD
+    - API_KEY
+    - AZURE_KEY
+    - GCP_KEY
+    - PRIVATE_KEY
+    - JWT_TOKEN
+
+# Fine-tuning Security
+fine_tuning:
+  # Max days since last training data access review
+  max_data_review_days: 90
+  
+  # Required encryption for training data
+  require_encryption: true
+  
+  # Allowed training data locations (patterns)
+  allowed_data_locations:
+    - "s3://*-training-*"
+    - "gs://*-training-*"
+    - "https://*.blob.core.windows.net/*training*"
+  
+  # Max training data age for relevance
+  max_training_data_age_days: 365
+
+# Evaluation/Red-team
+evaluation:
+  # Max days between safety evaluations
+  max_eval_gap_days: 30
+  
+  # Required evaluation types
+  required_eval_types:
+    - SAFETY
+    - TOXICITY
+    - PROMPT_INJECTION
+    - GROUNDEDNESS
+    - COHERENCE
+    - RELEVANCE
+  
+  # Minimum evaluation dataset size
+  min_eval_samples: 100
+  
+  # Required evaluation frequency for production models
+  production_eval_frequency_days: 7
+
+# Knowledge Base / RAG
+knowledge_base:
+  # Max days since last sync
+  max_sync_age_days: 7
+  
+  # Required: chunking strategy defined
+  require_chunking_config: true
+  
+  # Max allowed data sources (complexity risk)
+  max_data_sources: 10
+  
+  # Require encryption for vector stores
+  require_vector_encryption: true
+  
+  # Max document age for RAG sources
+  max_document_age_days: 90
+
+# Agent Security
+agent:
+  # Actions requiring human confirmation
+  sensitive_actions:
+    - DELETE
+    - UPDATE
+    - CREATE
+    - EXECUTE
+    - SEND
+    - TRANSFER
+    - MODIFY
+    - DEPLOY
+    - TERMINATE
+  
+  # Max allowed action groups per agent
+  max_action_groups: 5
+  
+  # Required: human confirmation for mutating actions
+  require_human_confirmation: true
+  
+  # Max intents for conversational agents
+  max_intents: 50
+  
+  # Max thread/conversation retention days
+  max_thread_retention_days: 30
+  
+  # Timeout limits
+  max_session_timeout_seconds: 3600
+
+# Rate Limiting / DoS Protection
+rate_limits:
+  # Minimum TPM (tokens per minute) - below this is suspicious (testing?)
+  min_tpm: 1000
+  
+  # Maximum TPM before flagging (cost/abuse risk)
+  max_tpm_warning: 1000000
+  
+  # Minimum RPM (requests per minute)
+  min_rpm: 10
+  
+  # Max concurrent requests
+  max_concurrent_requests: 100
+
+# Logging
+logging:
+  # Required log types
+  required_log_types:
+    - MODEL_INVOCATION
+    - AUDIT
+    - ACCESS
+    - ERROR
+  
+  # Minimum log retention days
+  min_retention_days: 90
+  
+  # Require encryption for logs
+  require_log_encryption: true
+  
+  # Enable input/output logging
+  require_io_logging: true
+
+# Network Security
+network:
+  # Flag public network access
+  flag_public_access: true
+  
+  # Require private endpoints
+  require_private_endpoint: true
+  
+  # Allowed egress endpoints for agents (patterns)
+  allowed_egress_endpoints:
+    - "*.amazonaws.com"
+    - "*.azure.com"
+    - "*.googleapis.com"
+    - "*.openai.com"
+  
+  # Max IP range size in whitelist (CIDR)
+  max_ip_range_cidr: 24
+
+# IAM / Access Control
+iam:
+  # Risky roles that should be flagged
+  risky_roles:
+    # AWS
+    - "AdministratorAccess"
+    - "PowerUserAccess"
+    # Azure
+    - "Owner"
+    - "Contributor"
+    - "Cognitive Services Contributor"
+    # GCP
+    - "roles/editor"
+    - "roles/owner"
+    - "roles/aiplatform.admin"
+  
+  # Max owners/admins per resource
+  max_owners: 3
+  
+  # Max inactive owner days before flagging
+  max_inactive_owner_days: 90
+  
+  # Require MFA for admin access
+  require_mfa_for_admin: true
+
+# Cost Management
+cost:
+  # High-cost models that need extra scrutiny
+  high_cost_models:
+    # AWS Bedrock
+    - "anthropic.claude-3-opus"
+    - "anthropic.claude-3.5-sonnet"
+    # Azure OpenAI
+    - "gpt-4"
+    - "gpt-4-turbo"
+    - "gpt-4o"
+    - "o1-preview"
+    - "o1"
+    # GCP Vertex AI
+    - "gemini-ultra"
+    - "gemini-1.5-pro"
+    - "claude-3-opus"
+  
+  # Budget alert threshold percentage
+  budget_alert_threshold_percent: 80
+  
+  # Require budget alerts for production
+  require_budget_alerts: true
+
+# Data Loss Prevention
+dlp:
+  # Internal terms to block in responses
+  internal_terms:
+    - "PROJECT_CODENAME"
+    - "INTERNAL_ONLY"
+    - "CONFIDENTIAL"
+  
+  # Sensitive patterns (regex)
+  sensitive_patterns:
+    - "api[_-]?key"
+    - "secret[_-]?key"
+    - "password"
+    - "bearer"
+    - "authorization"
+  
+  # Require DLP scanning
+  require_dlp_scanning: true
+
+# Prompt Flow / Orchestration
+prompt_flow:
+  # Allowed external endpoints for HTTP nodes
+  allowed_endpoints:
+    - "api.openai.com"
+    - "api.anthropic.com"
+    - "generativelanguage.googleapis.com"
+  
+  # Max flow complexity (nodes)
+  max_flow_nodes: 50
+  
+  # Require tracing/observability
+  require_tracing: true
+
+# Extensions / Function Calling
+extensions:
+  # Max API key age before rotation required
+  max_api_key_age_days: 90
+  
+  # Allowed API domains for extensions
+  allowed_api_domains:
+    - "googleapis.com"
+    - "azure.com"
+    - "amazonaws.com"
+  
+  # Require OAuth over API keys
+  prefer_oauth: true
+
+# Runtime / Behavioral Analysis
+runtime:
+  # Max session timeout for agents
+  max_session_timeout_seconds: 3600
+  
+  # Anomaly detection thresholds
+  error_rate_threshold_percent: 5
+  latency_threshold_ms: 30000
+  
+  # Drift detection sensitivity
+  drift_sensitivity: "MEDIUM"  # LOW, MEDIUM, HIGH
+  
+  # Min time between model updates
+  min_model_update_interval_hours: 24
+
+# Governance / Compliance
+governance:
+  # Required resource tags
+  required_tags:
+    - "owner"
+    - "environment"
+    - "cost-center"
+    - "data-classification"
+  
+  # Required labels (GCP)
+  required_labels:
+    - "owner"
+    - "env"
+    - "cost-center"
+  
+  # Current model versions (for upgrade checks)
+  current_model_versions:
+    gpt-4: "0125-Preview"
+    gpt-4-turbo: "2024-04-09"
+    claude-3-opus: "20240229"
+    gemini-pro: "001"
+  
+  # Deprecated models to flag
+  deprecated_models:
+    - "text-davinci-003"
+    - "code-davinci-002"
+    - "gpt-3.5-turbo-0301"
+    - "claude-instant-v1"
+
+# Multimodal Security
+multimodal:
+  # Require image content filtering
+  require_image_filter: true
+  
+  # Require audio content filtering
+  require_audio_filter: true
+  
+  # Require document sanitization
+  require_document_sanitization: true
+  
+  # Max file size for multimodal inputs (MB)
+  max_input_file_size_mb: 20
+
+# Feature Store
+feature_store:
+  # Max feature staleness before flagging
+  max_feature_staleness_hours: 24
+  
+  # Require encryption for feature values
+  require_encryption: true
+  
+  # Require point-in-time correctness
+  require_point_in_time: true
+  required_log_types:
+    - PROMPT
+    - RESPONSE
+    - AUDIT
+  
+  # Minimum retention days
+  min_retention_days: 90
+  
+  # Require encryption for logs
+  require_log_encryption: true
+
+# Network Security
+network:
+  # Flag public access
+  flag_public_access: true
+  
+  # Require private endpoints
+  require_private_endpoint: true
+  
+  # Require VNet integration
+  require_vnet: true
+
+# IAM / Ownership
+iam:
+  # Max owners per resource (too many = unclear ownership)
+  max_owners: 3
+  
+  # Risky roles that should trigger findings
+  risky_roles:
+    - Owner
+    - Contributor
+    - AdministratorAccess
+    - roles/owner
+    - roles/editor
+  
+  # Max days since owner last sign-in (stale access)
+  max_inactive_owner_days: 90
+
+# Severity Mapping
+# Override default severities based on context
+severity_overrides:
+  # If public access + no guardrails = CRITICAL (combined risk)
+  public_no_guardrails: CRITICAL
+  
+  # If fine-tuning enabled + public data source = CRITICAL
+  public_training_data: CRITICAL
+  
+  # If agent has admin role = CRITICAL
+  agent_admin_role: CRITICAL

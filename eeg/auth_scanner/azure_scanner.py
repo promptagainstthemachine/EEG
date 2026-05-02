@@ -3,6 +3,7 @@ EEG - Azure Authenticated Scanner
 Live audit of Azure OpenAI, AI Foundry, AI Search, and related services.
 Includes comprehensive IAM, network, guardrails, and diagnostic settings auditing.
 Auto-detects permissions and gracefully handles restricted access.
+Config-driven checks loaded from eeg/config/azure_live_checks.yaml
 """
 
 import os
@@ -10,6 +11,7 @@ import subprocess
 import json
 from typing import Optional, List, Dict, Tuple
 from eeg.collector import Collector, Finding, Severity
+from eeg.auth_scanner.check_runner import CheckRunner, get_threshold
 
 try:
     from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
@@ -48,6 +50,10 @@ def _safe_cli_call(cmd: List[str], timeout: int = 30) -> Tuple[bool, str, str]:
 
 
 class AzureAuthScanner:
+    """
+    Live audit of Azure AI resources using authenticated API calls.
+    Config-driven checks from azure_live_checks.yaml.
+    """
     """
     Live audit of Azure AI resources using authenticated API calls.
     Gracefully handles permission restrictions without breaking scan flow.

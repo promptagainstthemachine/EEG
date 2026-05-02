@@ -1,0 +1,608 @@
+# EEG - Azure OpenAI/AI Services Live Security Checks
+# Configuration for authenticated resource scanning
+
+metadata:
+  cloud: azure
+  version: "2.2.0"
+  last_updated: "2026-05-03"
+
+# API endpoints and commands used for each check category
+api_config:
+  cognitive_services:
+    service: cognitiveservices
+    commands:
+      list_accounts: "az cognitiveservices account list --output json"
+      show_account: "az cognitiveservices account show -n {name} -g {rg} --output json"
+      list_deployments: "az cognitiveservices account deployment list -n {name} -g {rg} --output json"
+      show_deployment: "az cognitiveservices account deployment show -n {name} -g {rg} --deployment-name {deployment} --output json"
+  
+  rai_policies:
+    service: cognitiveservices
+    commands:
+      list_policies: "az cognitiveservices account rai-policy list -n {name} -g {rg} --output json"
+      show_policy: "az cognitiveservices account rai-policy show -n {name} -g {rg} --rai-policy-name {policy} --output json"
+  
+  assistants:
+    service: openai
+    commands:
+      list_assistants: "az openai assistant list -n {name} -g {rg} --output json"
+      show_assistant: "az openai assistant show -n {name} -g {rg} --assistant-id {id} --output json"
+      list_threads: "az openai thread list -n {name} -g {rg} --output json"
+  
+  prompt_flow:
+    service: ml
+    commands:
+      list_flows: "az ml flow list -w {workspace} -g {rg} --output json"
+      show_flow: "az ml flow show -n {name} -w {workspace} -g {rg} --output json"
+      list_connections: "az ml connection list -w {workspace} -g {rg} --output json"
+  
+  network:
+    service: network
+    commands:
+      list_private_endpoints: "az network private-endpoint list -g {rg} --output json"
+      show_nsg: "az network nsg show -n {name} -g {rg} --output json"
+  
+  monitor:
+    service: monitor
+    commands:
+      list_diagnostic_settings: "az monitor diagnostic-settings list --resource {id} --output json"
+      list_metric_alerts: "az monitor metrics alert list -g {rg} --output json"
+      list_activity_logs: "az monitor activity-log list -g {rg} --output json"
+      list_dashboards: "az portal dashboard list -g {rg} --output json"
+  
+  iam:
+    service: role
+    commands:
+      list_role_assignments: "az role assignment list --scope {scope} --output json"
+  
+  search:
+    service: search
+    commands:
+      list_indexes: "az search index list -n {name} -g {rg} --output json"
+      show_index: "az search index show -n {name} -g {rg} --index-name {index} --output json"
+  
+  cost:
+    service: consumption
+    commands:
+      list_budgets: "az consumption budget list -g {rg} --output json"
+
+# Check definitions
+checks:
+  # ==================== CONTENT FILTERS / GUARDRAILS ====================
+  - id: AUTH-AZ-GUARD-001
+    name: "Deployment without content filter"
+    category: guardrail
+    severity: CRITICAL
+    enabled: true
+    description: "Azure OpenAI deployment has no content filter policy attached"
+    owasp_llm: "LLM01: Prompt Injection"
+    cwe: "CWE-74"
+    api: show_deployment
+    condition: "properties.raiPolicyName is null"
+    recommendation: "Attach a content filter policy to this deployment with all harm categories enabled."
+    references:
+      - "https://learn.microsoft.com/azure/ai-services/openai/how-to/content-filters"
+
+  - id: AUTH-AZ-GUARD-002
+    name: "Content filter with LOW severity threshold"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Content filter allows LOW severity harmful content through"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: show_policy
+    condition_fields:
+      - path: "properties.contentFilters[*].severityThreshold"
+        operator: "in"
+        values: ["Low", "Safe"]
+    threshold_ref: "guardrail.min_input_strength"
+    recommendation: "Set severity thresholds to HIGH for all harm categories in production."
+
+  - id: AUTH-AZ-GUARD-003
+    name: "Prompt injection filter disabled"
+    category: guardrail
+    severity: CRITICAL
+    enabled: true
+    description: "Jailbreak/prompt injection detection is disabled"
+    owasp_llm: "LLM01: Prompt Injection"
+    cwe: "CWE-74"
+    api: show_policy
+    condition: "properties.contentFilters not contains type 'Jailbreak' with enabled=true"
+    recommendation: "Enable jailbreak detection in the content filter policy."
+
+  - id: AUTH-AZ-GUARD-004
+    name: "Missing harm category in content filter"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Content filter is missing required harm categories"
+    api: show_policy
+    condition_fields:
+      - path: "properties.contentFilters[*].name"
+        check: "not contains all of [Hate, Violence, Sexual, SelfHarm]"
+    threshold_ref: "guardrail.required_filters"
+    recommendation: "Enable all harm categories: Hate, Violence, Sexual, SelfHarm, and Jailbreak."
+
+  - id: AUTH-AZ-GUARD-005
+    name: "Abuse monitoring opted out"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Resource has opted out of Azure abuse monitoring"
+    api: show_account
+    condition: "properties.abuseMonitoring.enabled == false"
+    recommendation: "Enable abuse monitoring for compliance and threat detection."
+
+  # ==================== NETWORK SECURITY ====================
+  - id: AUTH-AZ-NET-001
+    name: "Public network access enabled"
+    category: network
+    severity: HIGH
+    enabled: true
+    description: "Azure OpenAI resource allows public internet access"
+    api: show_account
+    condition: "properties.publicNetworkAccess == 'Enabled' or properties.networkAcls.defaultAction == 'Allow'"
+    threshold_ref: "network.flag_public_access"
+    recommendation: "Disable public network access and use private endpoints."
+    references:
+      - "https://learn.microsoft.com/azure/ai-services/openai/how-to/use-private-endpoints"
+
+  - id: AUTH-AZ-NET-002
+    name: "No private endpoint configured"
+    category: network
+    severity: HIGH
+    enabled: true
+    description: "Resource has no private endpoint — requires public access"
+    api: show_account
+    condition: "properties.privateEndpointConnections | length == 0"
+    threshold_ref: "network.require_private_endpoint"
+    recommendation: "Configure a private endpoint for secure VNet connectivity."
+
+  - id: AUTH-AZ-NET-003
+    name: "IP whitelist too broad"
+    category: network
+    severity: MEDIUM
+    enabled: true
+    description: "Network ACL allows broad IP ranges"
+    api: show_account
+    condition: "properties.networkAcls.ipRules contains 0.0.0.0/0 or /8 or /16"
+    recommendation: "Restrict IP whitelist to specific known CIDR ranges."
+
+  # ==================== AUTHENTICATION ====================
+  - id: AUTH-AZ-AUTH-001
+    name: "Local authentication enabled"
+    category: authentication
+    severity: MEDIUM
+    enabled: true
+    description: "API key authentication is enabled — prefer Azure AD"
+    api: show_account
+    condition: "properties.disableLocalAuth == false or properties.disableLocalAuth is null"
+    recommendation: "Disable local auth and use Azure AD (Entra ID) for authentication."
+    references:
+      - "https://learn.microsoft.com/azure/ai-services/openai/how-to/managed-identity"
+
+  - id: AUTH-AZ-AUTH-002
+    name: "Managed identity not configured"
+    category: authentication
+    severity: MEDIUM
+    enabled: true
+    description: "Resource does not use managed identity for downstream calls"
+    api: show_account
+    condition: "identity.type is null or identity.type == 'None'"
+    recommendation: "Configure system or user-assigned managed identity."
+
+  # ==================== FINE-TUNING ====================
+  - id: AUTH-AZ-FT-001
+    name: "Fine-tuned model without encryption"
+    category: fine_tuning
+    severity: HIGH
+    enabled: true
+    description: "Custom fine-tuned model is not encrypted with customer-managed key"
+    api: list_deployments
+    condition: "model.format == 'OpenAI' and model.version contains 'ft-' and encryption.keyVaultProperties is null"
+    recommendation: "Use customer-managed keys (CMK) for fine-tuned model encryption."
+
+  - id: AUTH-AZ-FT-002
+    name: "Training data in public storage"
+    category: fine_tuning
+    severity: CRITICAL
+    enabled: true
+    description: "Fine-tuning training data is stored in publicly accessible storage"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: list_deployments
+    condition: "model.source storage has public access"
+    recommendation: "Store training data in private storage with strict access controls."
+
+  # ==================== EVALUATION ====================
+  - id: AUTH-AZ-EVAL-001
+    name: "No safety evaluation configured"
+    category: evaluation
+    severity: HIGH
+    enabled: true
+    description: "No Azure AI Evaluation jobs found for this resource"
+    owasp_llm: "LLM09: Improper Content Filtering"
+    api: list_evaluations
+    condition: "evaluations | length == 0"
+    recommendation: "Configure Azure AI Evaluation to test for safety, groundedness, and relevance."
+    references:
+      - "https://learn.microsoft.com/azure/ai-studio/how-to/evaluate-generative-ai-app"
+
+  - id: AUTH-AZ-EVAL-002
+    name: "Evaluation missing safety metrics"
+    category: evaluation
+    severity: MEDIUM
+    enabled: true
+    description: "Evaluation does not include safety-specific metrics"
+    api: list_evaluations
+    condition_fields:
+      - path: "evaluations[*].metrics"
+        check: "not contains any of [groundedness, safety, coherence, fluency]"
+    threshold_ref: "evaluation.required_eval_types"
+    recommendation: "Include groundedness, safety, and relevance metrics in evaluations."
+
+  # ==================== LOGGING ====================
+  - id: AUTH-AZ-LOG-001
+    name: "Diagnostic settings not configured"
+    category: logging
+    severity: HIGH
+    enabled: true
+    description: "No diagnostic settings — no audit trail for API calls"
+    api: list_diagnostic_settings
+    condition: "value | length == 0"
+    recommendation: "Configure diagnostic settings to Log Analytics or Storage for audit compliance."
+    references:
+      - "https://learn.microsoft.com/azure/ai-services/openai/how-to/monitoring"
+
+  - id: AUTH-AZ-LOG-002
+    name: "Prompt logging disabled"
+    category: logging
+    severity: MEDIUM
+    enabled: true
+    description: "RequestResponse logging is disabled — no prompt/completion visibility"
+    api: list_diagnostic_settings
+    condition: "value[*].logs not contains category 'RequestResponse' with enabled=true"
+    recommendation: "Enable RequestResponse logging for prompt and completion auditing."
+
+  - id: AUTH-AZ-LOG-003
+    name: "Short log retention period"
+    category: logging
+    severity: LOW
+    enabled: true
+    description: "Log retention is below recommended threshold"
+    api: list_diagnostic_settings
+    condition: "value[*].logs[*].retentionPolicy.days < {threshold}"
+    threshold_ref: "logging.min_retention_days"
+    recommendation: "Set log retention to at least 90 days for compliance."
+
+  # ==================== IAM / OWNERSHIP ====================
+  - id: AUTH-AZ-IAM-001
+    name: "Too many owners on resource"
+    category: iam
+    severity: MEDIUM
+    enabled: true
+    description: "Resource has excessive owners — unclear accountability"
+    api: list_role_assignments
+    condition: "filter(role == 'Owner') | length > {threshold}"
+    threshold_ref: "iam.max_owners"
+    recommendation: "Limit Owner role assignments to 2-3 accountable individuals."
+
+  - id: AUTH-AZ-IAM-002
+    name: "Contributor with Cognitive Services access"
+    category: iam
+    severity: MEDIUM
+    enabled: true
+    description: "Contributor role can manage AI resources — may be overprivileged"
+    api: list_role_assignments
+    condition: "filter(role == 'Contributor' and principalType == 'User') | length > 0"
+    recommendation: "Use Cognitive Services User role for data-plane access instead of Contributor."
+
+  - id: AUTH-AZ-IAM-003
+    name: "Stale owner access"
+    category: iam
+    severity: LOW
+    enabled: true
+    description: "Owner has not signed in recently — potential orphaned access"
+    api: list_role_assignments
+    condition: "owner.signInActivity.lastSignInDateTime older than {threshold} days"
+    threshold_ref: "iam.max_inactive_owner_days"
+    recommendation: "Review and remove stale owner access."
+
+  # ==================== RATE LIMITS ====================
+  - id: AUTH-AZ-RATE-001
+    name: "No rate limit configured"
+    category: rate_limit
+    severity: MEDIUM
+    enabled: true
+    description: "Deployment has no TPM/RPM limits — DoS and cost risk"
+    api: show_deployment
+    condition: "properties.rateLimits is null or properties.rateLimits | length == 0"
+    threshold_ref: "rate_limits.min_tpm"
+    recommendation: "Configure TPM and RPM limits appropriate for your workload."
+
+  - id: AUTH-AZ-RATE-002
+    name: "Excessive rate limits"
+    category: rate_limit
+    severity: LOW
+    enabled: true
+    description: "Rate limits are very high — potential cost overrun risk"
+    api: show_deployment
+    condition: "properties.rateLimits.tokensPerMinute > {threshold}"
+    threshold_ref: "rate_limits.max_tpm_warning"
+    recommendation: "Review rate limits to ensure they align with expected usage."
+
+  # ==================== AGENT / ASSISTANTS SECURITY ====================
+  - id: AUTH-AZ-AGENT-001
+    name: "Assistant without content filter"
+    category: agent
+    severity: CRITICAL
+    enabled: true
+    description: "Azure AI Assistant has no content filter policy attached"
+    owasp_llm: "LLM01: Prompt Injection"
+    cwe: "CWE-74"
+    api: list_assistants
+    condition: "metadata.contentFilterPolicy is null"
+    recommendation: "Attach a content filter policy to all assistants with jailbreak detection enabled."
+
+  - id: AUTH-AZ-AGENT-002
+    name: "Assistant with code interpreter and file access"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Assistant has code interpreter with unrestricted file access"
+    owasp_llm: "LLM06: Excessive Agency"
+    cwe: "CWE-94"
+    api: list_assistants
+    condition: "tools contains code_interpreter and file_ids | length > 0"
+    recommendation: "Limit file access for code interpreter assistants. Use sandboxed execution."
+
+  - id: AUTH-AZ-AGENT-003
+    name: "Assistant function calling without schema"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Assistant tool functions lack proper JSON schema validation"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: list_assistants
+    condition: "tools[*] where type == 'function' and function.parameters is null"
+    recommendation: "Define strict JSON schemas for all function parameters to prevent injection."
+
+  - id: AUTH-AZ-AGENT-004
+    name: "Thread retention exceeds limit"
+    category: agent
+    severity: MEDIUM
+    enabled: true
+    description: "Assistant threads retained beyond compliance threshold"
+    api: list_threads
+    condition: "created_at older than {threshold} days and status != 'completed'"
+    threshold_ref: "agent.max_thread_retention_days"
+    recommendation: "Configure automatic thread cleanup to comply with data retention policies."
+
+  # ==================== PROMPT FLOW / AI STUDIO ====================
+  - id: AUTH-AZ-FLOW-001
+    name: "Prompt flow without managed endpoint"
+    category: prompt_flow
+    severity: MEDIUM
+    enabled: true
+    description: "Prompt flow deployed without managed online endpoint — no autoscaling"
+    api: list_flows
+    condition: "deploymentConfig.endpointType != 'ManagedOnlineEndpoint'"
+    recommendation: "Deploy prompt flows to managed endpoints for autoscaling and monitoring."
+
+  - id: AUTH-AZ-FLOW-002
+    name: "Prompt flow with external connections"
+    category: prompt_flow
+    severity: HIGH
+    enabled: true
+    description: "Flow has connections to external services — data egress risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: list_flows
+    condition: "connections[*].type in ['CustomConnection', 'HttpConnection'] and target not in allowed_endpoints"
+    threshold_ref: "prompt_flow.allowed_endpoints"
+    recommendation: "Restrict external connections to pre-approved endpoints."
+
+  - id: AUTH-AZ-FLOW-003
+    name: "Prompt flow secrets in plain text"
+    category: prompt_flow
+    severity: CRITICAL
+    enabled: true
+    description: "Flow definition contains hardcoded secrets or API keys"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    cwe: "CWE-798"
+    api: list_flows
+    condition: "definition matches pattern for secrets or API keys"
+    recommendation: "Use Azure Key Vault references for all secrets in prompt flows."
+
+  - id: AUTH-AZ-FLOW-004
+    name: "Flow execution without tracing"
+    category: prompt_flow
+    severity: MEDIUM
+    enabled: true
+    description: "Prompt flow runs without Application Insights tracing"
+    api: list_flows
+    condition: "tracingConfig.enabled != true"
+    recommendation: "Enable Application Insights tracing for flow observability and debugging."
+
+  # ==================== MULTIMODAL SECURITY ====================
+  - id: AUTH-AZ-MULTI-001
+    name: "Vision deployment without image filter"
+    category: multimodal
+    severity: HIGH
+    enabled: true
+    description: "GPT-4V/Vision deployment has no image content moderation"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: show_deployment
+    condition: "model.capabilities.vision == true and raiPolicyName.imageFilters is null"
+    recommendation: "Enable image content filtering for all vision-capable deployments."
+
+  - id: AUTH-AZ-MULTI-002
+    name: "DALL-E deployment without output filter"
+    category: multimodal
+    severity: HIGH
+    enabled: true
+    description: "DALL-E deployment missing output image moderation"
+    api: show_deployment
+    condition: "model.name contains 'dall-e' and raiPolicyName.outputFilters is null"
+    recommendation: "Enable output image filtering for DALL-E to prevent harmful content generation."
+
+  - id: AUTH-AZ-MULTI-003
+    name: "Document intelligence without sanitization"
+    category: multimodal
+    severity: MEDIUM
+    enabled: true
+    description: "Document Intelligence results passed to LLM without validation"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: list_connections
+    condition: "type == 'AzureAIDocumentIntelligence' and postProcessing.sanitize != true"
+    recommendation: "Enable content sanitization for document processing pipelines."
+
+  # ==================== DATA EXFILTRATION PREVENTION ====================
+  - id: AUTH-AZ-DLP-001
+    name: "No custom blocklist configured"
+    category: dlp
+    severity: MEDIUM
+    enabled: true
+    description: "Content filter has no custom blocklist for internal terms"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    api: show_policy
+    condition: "properties.customBlocklists | length == 0"
+    recommendation: "Add custom blocklists for internal project names, codenames, and sensitive terms."
+
+  - id: AUTH-AZ-DLP-002
+    name: "Protected material filter disabled"
+    category: dlp
+    severity: MEDIUM
+    enabled: true
+    description: "Protected material (copyrighted text) detection is disabled"
+    api: show_policy
+    condition: "properties.contentFilters not contains type 'ProtectedMaterial' with enabled=true"
+    recommendation: "Enable protected material detection to prevent copyright issues."
+
+  - id: AUTH-AZ-DLP-003
+    name: "No grounding source attribution"
+    category: dlp
+    severity: LOW
+    enabled: true
+    description: "RAG responses do not include source attribution — citation compliance risk"
+    api: show_deployment
+    condition: "properties.dynamicThrottlingEnabled == true and citationConfig is null"
+    recommendation: "Enable citation/attribution for grounded responses to support fact-checking."
+
+  # ==================== COST & ABUSE MONITORING ====================
+  - id: AUTH-AZ-COST-001
+    name: "No cost alert configured"
+    category: cost
+    severity: MEDIUM
+    enabled: true
+    description: "No Azure Cost Management alert for Cognitive Services spend"
+    api: "az consumption budget list"
+    condition: "budgets not contains scope for cognitive services"
+    recommendation: "Create budget alert for Azure OpenAI and Cognitive Services spend."
+
+  - id: AUTH-AZ-COST-002
+    name: "Premium deployment without usage monitoring"
+    category: cost
+    severity: MEDIUM
+    enabled: true
+    description: "GPT-4/GPT-4-Turbo deployment has no usage dashboard"
+    api: show_deployment
+    condition: "model.name matches 'gpt-4' and metrics.enabled != true"
+    threshold_ref: "cost.high_cost_models"
+    recommendation: "Enable Azure Monitor metrics for high-cost model deployments."
+
+  # ==================== ON YOUR DATA (BYOD) / RAG ====================
+  - id: AUTH-AZ-BYOD-001
+    name: "On Your Data with public search index"
+    category: knowledge_base
+    severity: CRITICAL
+    enabled: true
+    description: "Azure AI Search index used for grounding is publicly accessible"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: show_deployment
+    condition: "dataSource.type == 'AzureCognitiveSearch' and dataSource.endpoint publicNetworkAccess == 'Enabled'"
+    recommendation: "Restrict Azure AI Search to private endpoint access only."
+
+  - id: AUTH-AZ-BYOD-002
+    name: "Ingestion pipeline without document sanitization"
+    category: knowledge_base
+    severity: HIGH
+    enabled: true
+    description: "Document ingestion does not use AI Document Intelligence for sanitization"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: list_indexes
+    condition: "skillset.skills not contains 'DocumentExtractionSkill' with sanitize=true"
+    recommendation: "Add document extraction skill with content sanitization to ingestion pipeline."
+
+  - id: AUTH-AZ-BYOD-003
+    name: "Search index missing RBAC"
+    category: knowledge_base
+    severity: HIGH
+    enabled: true
+    description: "Azure AI Search index uses API key auth instead of RBAC"
+    api: show_deployment
+    condition: "dataSource.authentication.type == 'APIKey'"
+    recommendation: "Use managed identity and RBAC for Azure AI Search authentication."
+
+  # ==================== MODEL GOVERNANCE ====================
+  - id: AUTH-AZ-GOV-001
+    name: "Deployment without resource tags"
+    category: governance
+    severity: LOW
+    enabled: true
+    description: "Azure OpenAI deployment missing required tags"
+    api: show_deployment
+    condition: "tags not contains required_tags"
+    threshold_ref: "governance.required_tags"
+    recommendation: "Apply required tags (owner, environment, cost-center) to all deployments."
+
+  - id: AUTH-AZ-GOV-002
+    name: "Model version outdated"
+    category: governance
+    severity: MEDIUM
+    enabled: true
+    description: "Deployment uses outdated model version — missing security patches"
+    api: show_deployment
+    condition: "model.version not in current_versions for model.name"
+    threshold_ref: "governance.current_model_versions"
+    recommendation: "Upgrade to latest model version for security improvements and bug fixes."
+
+  - id: AUTH-AZ-GOV-003
+    name: "No deployment approval workflow"
+    category: governance
+    severity: LOW
+    enabled: true
+    description: "AI resource created without change management approval"
+    api: list_activity_logs
+    condition: "operationName == 'Microsoft.CognitiveServices/accounts/deployments/write' and authorization.evidence is null"
+    recommendation: "Implement approval workflows for AI resource deployments."
+
+  # ==================== RUNTIME MONITORING ====================
+  - id: AUTH-AZ-RUNTIME-001
+    name: "No anomaly detection configured"
+    category: runtime
+    severity: MEDIUM
+    enabled: true
+    description: "No Azure Monitor anomaly detection for API usage patterns"
+    api: list_metric_alerts
+    condition: "alerts not contains dynamic threshold for cognitive services"
+    recommendation: "Configure dynamic threshold alerts for unusual API usage patterns."
+
+  - id: AUTH-AZ-RUNTIME-002
+    name: "Missing Responsible AI dashboard"
+    category: runtime
+    severity: MEDIUM
+    enabled: true
+    description: "No Responsible AI dashboard configured for model monitoring"
+    api: list_dashboards
+    condition: "dashboards not contains type 'ResponsibleAI'"
+    recommendation: "Create Responsible AI dashboard for bias and fairness monitoring."
+
+  - id: AUTH-AZ-RUNTIME-003
+    name: "Content filter override allowed"
+    category: runtime
+    severity: HIGH
+    enabled: true
+    description: "Content filter allows runtime override via API parameters"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: show_account
+    condition: "properties.allowContentFilterOverride == true"
+    recommendation: "Disable content filter override to prevent bypassing safety controls."

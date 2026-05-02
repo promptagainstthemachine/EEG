@@ -2,6 +2,7 @@
 EEG - Base Detector
 Abstract base class for all security detectors. Loads rules from YAML and
 provides AST + regex scanning primitives.
+Rules are loaded from rules/static/{cloud}_static.yaml
 """
 
 import ast
@@ -12,7 +13,8 @@ from typing import List, Dict, Optional, Set
 
 from eeg.collector import Collector, Finding, Severity
 
-RULES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rules")
+# Rules are now in rules/static/ folder
+RULES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rules", "static")
 
 
 class BaseDetector:
@@ -26,7 +28,8 @@ class BaseDetector:
         self.rules = self._load_rules()
 
     def _load_rules(self) -> List[Dict]:
-        rule_file = os.path.join(RULES_DIR, self.cloud_env, "rule.yaml")
+        # Load from rules/static/{cloud}_static.yaml
+        rule_file = os.path.join(RULES_DIR, f"{self.cloud_env}_static.yaml")
         if not os.path.isfile(rule_file):
             return []
         with open(rule_file, "r") as f:

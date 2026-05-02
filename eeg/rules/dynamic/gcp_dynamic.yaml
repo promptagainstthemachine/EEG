@@ -1,0 +1,713 @@
+# EEG - GCP Vertex AI Live Security Checks
+# Configuration for authenticated resource scanning
+
+metadata:
+  cloud: gcp
+  version: "2.2.0"
+  last_updated: "2026-05-03"
+
+# API endpoints and commands used for each check category
+api_config:
+  vertex_ai:
+    service: aiplatform
+    project_aware: true
+    commands:
+      list_endpoints: "gcloud ai endpoints list --format=json"
+      describe_endpoint: "gcloud ai endpoints describe {endpoint_id} --format=json"
+      list_models: "gcloud ai models list --format=json"
+      describe_model: "gcloud ai models describe {model_id} --format=json"
+      list_custom_jobs: "gcloud ai custom-jobs list --format=json"
+      list_tuning_jobs: "gcloud ai tuning-jobs list --format=json"
+      list_index_endpoints: "gcloud ai index-endpoints list --format=json"
+      list_pipeline_jobs: "gcloud ai pipeline-jobs list --format=json"
+      describe_pipeline_job: "gcloud ai pipeline-jobs describe {job_id} --format=json"
+  
+  vertex_agent_builder:
+    service: discoveryengine
+    commands:
+      list_engines: "gcloud discovery-engine engines list --format=json"
+      list_data_stores: "gcloud discovery-engine data-stores list --format=json"
+      describe_data_store: "gcloud discovery-engine data-stores describe {data_store_id} --format=json"
+  
+  dialogflow:
+    service: dialogflow
+    commands:
+      list_agents: "gcloud dialogflow agents list --format=json"
+      describe_agent: "gcloud dialogflow agents describe {agent_id} --format=json"
+      list_intents: "gcloud dialogflow intents list --agent {agent_id} --format=json"
+  
+  extensions:
+    service: aiplatform
+    commands:
+      list_extensions: "gcloud ai extensions list --format=json"
+      describe_extension: "gcloud ai extensions describe {extension_id} --format=json"
+  
+  feature_store:
+    service: aiplatform
+    commands:
+      list_featurestores: "gcloud ai featurestores list --format=json"
+      list_entity_types: "gcloud ai featurestores entity-types list --featurestore {fs_id} --format=json"
+      list_features: "gcloud ai featurestores entity-types features list --featurestore {fs_id} --entity-type {et_id} --format=json"
+  
+  prompts:
+    service: aiplatform
+    commands:
+      list_prompts: "gcloud ai prompts list --format=json"
+      describe_prompt: "gcloud ai prompts describe {prompt_id} --format=json"
+  
+  iam:
+    service: iam
+    commands:
+      get_iam_policy: "gcloud projects get-iam-policy {project} --format=json"
+      list_service_accounts: "gcloud iam service-accounts list --format=json"
+      get_service_account_policy: "gcloud iam service-accounts get-iam-policy {sa_email} --format=json"
+  
+  logging:
+    service: logging
+    commands:
+      list_sinks: "gcloud logging sinks list --format=json"
+      describe_sink: "gcloud logging sinks describe {sink_name} --format=json"
+      list_metrics: "gcloud logging metrics list --format=json"
+  
+  monitoring:
+    service: monitoring
+    commands:
+      list_alert_policies: "gcloud monitoring policies list --format=json"
+      describe_alert_policy: "gcloud monitoring policies describe {policy_id} --format=json"
+  
+  dlp:
+    service: dlp
+    commands:
+      list_dlp_jobs: "gcloud dlp jobs list --format=json"
+      list_inspect_templates: "gcloud dlp inspect-templates list --format=json"
+      list_deidentify_templates: "gcloud dlp deidentify-templates list --format=json"
+  
+  vpc_service_controls:
+    service: access-context-manager
+    commands:
+      list_service_perimeters: "gcloud access-context-manager perimeters list --policy {policy_id} --format=json"
+      describe_perimeter: "gcloud access-context-manager perimeters describe {perimeter_id} --policy {policy_id} --format=json"
+  
+  billing:
+    service: billing
+    commands:
+      list_budgets: "gcloud billing budgets list --billing-account {account_id} --format=json"
+
+# Check definitions
+checks:
+  # ==================== GUARDRAILS / SAFETY ====================
+  - id: AUTH-GCP-GUARD-001
+    name: "No safety settings on endpoint"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI endpoint has no safety settings configured"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: describe_endpoint
+    condition: "safetySettings is null or safetySettings | length == 0"
+    recommendation: "Configure safety settings with appropriate thresholds for all harm categories."
+    references:
+      - "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/configure-safety-filters"
+
+  - id: AUTH-GCP-GUARD-002
+    name: "Safety threshold set to BLOCK_NONE"
+    category: guardrail
+    severity: CRITICAL
+    enabled: true
+    description: "Safety filter is disabled (BLOCK_NONE) for a harm category"
+    owasp_llm: "LLM01: Prompt Injection"
+    cwe: "CWE-74"
+    api: describe_endpoint
+    condition_fields:
+      - path: "safetySettings[*].threshold"
+        operator: "=="
+        values: ["BLOCK_NONE"]
+    recommendation: "Set safety thresholds to BLOCK_MEDIUM_AND_ABOVE or stricter for production."
+
+  - id: AUTH-GCP-GUARD-003
+    name: "Missing harm category in safety settings"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Safety settings do not cover all harm categories"
+    api: describe_endpoint
+    condition_fields:
+      - path: "safetySettings[*].category"
+        check: "not contains all of [HARM_CATEGORY_HATE_SPEECH, HARM_CATEGORY_DANGEROUS_CONTENT, HARM_CATEGORY_SEXUALLY_EXPLICIT, HARM_CATEGORY_HARASSMENT]"
+    threshold_ref: "guardrail.required_filters"
+    recommendation: "Configure safety settings for all harm categories."
+
+  # ==================== NETWORK SECURITY ====================
+  - id: AUTH-GCP-NET-001
+    name: "Public endpoint (no VPC peering)"
+    category: network
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI endpoint is publicly accessible without VPC"
+    api: describe_endpoint
+    condition: "network is null"
+    threshold_ref: "network.require_private_endpoint"
+    recommendation: "Deploy endpoints within a VPC using private endpoints."
+    references:
+      - "https://cloud.google.com/vertex-ai/docs/general/vpc-peering"
+
+  - id: AUTH-GCP-NET-002
+    name: "Endpoint allows unauthenticated access"
+    category: network
+    severity: CRITICAL
+    enabled: true
+    description: "Endpoint configured to allow unauthenticated predictions"
+    api: describe_endpoint
+    condition: "dedicatedEndpointEnabled == false and publicEndpointEnabled == true"
+    recommendation: "Require authentication for all endpoint access."
+
+  # ==================== ENCRYPTION ====================
+  - id: AUTH-GCP-ENC-001
+    name: "No customer-managed encryption key (CMEK)"
+    category: encryption
+    severity: HIGH
+    enabled: true
+    description: "Endpoint not encrypted with customer-managed key"
+    api: describe_endpoint
+    condition: "encryptionSpec.kmsKeyName is null"
+    recommendation: "Configure CMEK encryption for data at rest."
+    references:
+      - "https://cloud.google.com/vertex-ai/docs/general/cmek"
+
+  - id: AUTH-GCP-ENC-002
+    name: "Model artifacts not encrypted with CMEK"
+    category: encryption
+    severity: MEDIUM
+    enabled: true
+    description: "Custom model artifacts stored without CMEK"
+    api: describe_model
+    condition: "encryptionSpec.kmsKeyName is null"
+    recommendation: "Upload models with encryption_spec pointing to a Cloud KMS key."
+
+  # ==================== FINE-TUNING ====================
+  - id: AUTH-GCP-FT-001
+    name: "Tuning job without output encryption"
+    category: fine_tuning
+    severity: HIGH
+    enabled: true
+    description: "Model tuning job output is not encrypted"
+    api: list_tuning_jobs
+    condition: "tunedModelDestination.encryptionSpec is null"
+    recommendation: "Configure CMEK for tuned model output."
+
+  - id: AUTH-GCP-FT-002
+    name: "Training data in public GCS bucket"
+    category: fine_tuning
+    severity: CRITICAL
+    enabled: true
+    description: "Tuning job uses training data from public bucket"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: list_tuning_jobs
+    condition: "trainingDataSource bucket has public access"
+    recommendation: "Store training data in private GCS buckets with IAM restrictions."
+
+  - id: AUTH-GCP-FT-003
+    name: "Tuning job with broad IAM permissions"
+    category: fine_tuning
+    severity: HIGH
+    enabled: true
+    description: "Tuning job service account has excessive permissions"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: list_tuning_jobs
+    condition: "serviceAccount has roles/editor or roles/owner"
+    threshold_ref: "iam.risky_roles"
+    recommendation: "Use least-privilege service account for tuning jobs."
+
+  # ==================== AGENT BUILDER / RAG ====================
+  - id: AUTH-GCP-KB-001
+    name: "Data store with public access"
+    category: knowledge_base
+    severity: CRITICAL
+    enabled: true
+    description: "Agent Builder data store allows public access"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: list_data_stores
+    condition: "dataStore.contentConfig.publicAccessPrevention != 'ENFORCED'"
+    recommendation: "Enable public access prevention on all data stores."
+
+  - id: AUTH-GCP-KB-002
+    name: "Data store not synced recently"
+    category: knowledge_base
+    severity: MEDIUM
+    enabled: true
+    description: "Data store has stale data — last sync exceeded threshold"
+    api: list_data_stores
+    condition: "dataStore.lastSyncTime older than {threshold} days"
+    threshold_ref: "knowledge_base.max_sync_age_days"
+    recommendation: "Configure scheduled imports or real-time sync for data freshness."
+
+  - id: AUTH-GCP-KB-003
+    name: "Engine without grounding enabled"
+    category: knowledge_base
+    severity: MEDIUM
+    enabled: true
+    description: "Search/chat engine does not use grounding — hallucination risk"
+    api: list_engines
+    condition: "engine.searchEngineConfig.searchTier != 'ENTERPRISE' or groundingConfig is null"
+    recommendation: "Enable grounding to reduce hallucination in responses."
+
+  # ==================== EVALUATION ====================
+  - id: AUTH-GCP-EVAL-001
+    name: "No evaluation pipelines configured"
+    category: evaluation
+    severity: HIGH
+    enabled: true
+    description: "No model evaluation jobs found — safety testing not automated"
+    owasp_llm: "LLM09: Improper Content Filtering"
+    api: list_custom_jobs
+    condition: "filter(displayName contains 'eval') | length == 0"
+    recommendation: "Create evaluation pipelines to test model safety and quality."
+    references:
+      - "https://cloud.google.com/vertex-ai/generative-ai/docs/models/evaluate-models"
+
+  - id: AUTH-GCP-EVAL-002
+    name: "Evaluation without safety metrics"
+    category: evaluation
+    severity: MEDIUM
+    enabled: true
+    description: "Evaluation job does not include safety metrics"
+    api: list_custom_jobs
+    condition_fields:
+      - path: "jobSpec.evaluationSpec.metrics"
+        check: "not contains any of [safety, groundedness, fluency]"
+    threshold_ref: "evaluation.required_eval_types"
+    recommendation: "Include safety, groundedness, and fluency metrics in evaluations."
+
+  # ==================== LOGGING ====================
+  - id: AUTH-GCP-LOG-001
+    name: "No audit logging configured"
+    category: logging
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI audit logs not exported — no forensic capability"
+    api: list_sinks
+    condition: "filter(filter contains 'aiplatform') | length == 0"
+    recommendation: "Configure log sink to export Vertex AI audit logs to Cloud Storage or BigQuery."
+    references:
+      - "https://cloud.google.com/vertex-ai/docs/general/audit-logging"
+
+  - id: AUTH-GCP-LOG-002
+    name: "Log sink without encryption"
+    category: logging
+    severity: MEDIUM
+    enabled: true
+    description: "Log sink destination is not encrypted with CMEK"
+    api: describe_sink
+    condition: "destination bucket kmsKeyName is null"
+    threshold_ref: "logging.require_log_encryption"
+    recommendation: "Configure CMEK encryption for log sink destination."
+
+  # ==================== IAM ====================
+  - id: AUTH-GCP-IAM-001
+    name: "AI Platform Admin role assigned to user"
+    category: iam
+    severity: HIGH
+    enabled: true
+    description: "User has full AI Platform admin access — principle of least privilege violated"
+    api: get_iam_policy
+    condition: "bindings filter(role == 'roles/aiplatform.admin' and members contains 'user:') | length > 0"
+    threshold_ref: "iam.risky_roles"
+    recommendation: "Use granular roles like aiplatform.user or custom roles."
+
+  - id: AUTH-GCP-IAM-002
+    name: "Service account with Editor role"
+    category: iam
+    severity: HIGH
+    enabled: true
+    description: "Service account has project Editor role — excessive permissions"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: get_iam_policy
+    condition: "bindings filter(role == 'roles/editor' and members contains 'serviceAccount:') | length > 0"
+    recommendation: "Replace Editor role with specific AI Platform roles."
+
+  - id: AUTH-GCP-IAM-003
+    name: "Too many AI Platform admins"
+    category: iam
+    severity: MEDIUM
+    enabled: true
+    description: "Excessive admin role assignments — unclear accountability"
+    api: get_iam_policy
+    condition: "bindings filter(role == 'roles/aiplatform.admin') | members | length > {threshold}"
+    threshold_ref: "iam.max_owners"
+    recommendation: "Limit admin role assignments to essential personnel."
+
+  # ==================== RATE LIMITS ====================
+  - id: AUTH-GCP-RATE-001
+    name: "No quota limits configured"
+    category: rate_limit
+    severity: LOW
+    enabled: true
+    description: "Using default quotas — no custom rate protection"
+    api: describe_endpoint
+    condition: "deployedModels[*].automaticResources.maxReplicaCount is null"
+    recommendation: "Configure autoscaling limits to control costs and prevent DoS."
+
+  # ==================== MODEL SECURITY ====================
+  - id: AUTH-GCP-MODEL-001
+    name: "Model artifact in non-GCS location"
+    category: model
+    severity: HIGH
+    enabled: true
+    description: "Model artifact URI points to external storage"
+    api: describe_model
+    condition: "artifactUri not startswith 'gs://'"
+    recommendation: "Store model artifacts exclusively in private GCS buckets."
+
+  - id: AUTH-GCP-MODEL-002
+    name: "Model without version control"
+    category: model
+    severity: LOW
+    enabled: true
+    description: "Model does not use version aliases — rollback capability limited"
+    api: describe_model
+    condition: "versionAliases | length == 0"
+    recommendation: "Use version aliases for production models to enable quick rollback."
+
+  # ==================== AGENT BUILDER / DIALOGFLOW CX ====================
+  - id: AUTH-GCP-AGENT-001
+    name: "Dialogflow agent without webhook verification"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Dialogflow CX agent webhook does not verify signatures"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: list_agents
+    condition: "webhooks[*].serviceDirectory is null and webhooks[*].authType != 'service_account'"
+    recommendation: "Enable webhook authentication using service account or Cloud Run service directory."
+
+  - id: AUTH-GCP-AGENT-002
+    name: "Agent with excessive intents"
+    category: agent
+    severity: MEDIUM
+    enabled: true
+    description: "Agent has too many intents — increased attack surface"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: list_agents
+    condition: "intents | length > {threshold}"
+    threshold_ref: "agent.max_intents"
+    recommendation: "Split agent into specialized agents to reduce complexity and attack surface."
+
+  - id: AUTH-GCP-AGENT-003
+    name: "Agent tool without parameter validation"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI Agent tool lacks input parameter schema validation"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: describe_agent
+    condition: "tools[*].functionDeclarations[*].parameters.properties is null"
+    recommendation: "Define strict JSON schemas for all tool parameters."
+
+  - id: AUTH-GCP-AGENT-004
+    name: "Agent with code execution enabled"
+    category: agent
+    severity: CRITICAL
+    enabled: true
+    description: "Agent has code execution capability without sandbox restrictions"
+    owasp_llm: "LLM06: Excessive Agency"
+    cwe: "CWE-94"
+    api: describe_agent
+    condition: "tools contains 'code_execution' and executionConfig.sandboxMode != 'STRICT'"
+    recommendation: "Enable strict sandbox mode for code execution tools."
+
+  # ==================== EXTENSIONS / FUNCTION CALLING ====================
+  - id: AUTH-GCP-EXT-001
+    name: "Extension without API key rotation"
+    category: extensions
+    severity: MEDIUM
+    enabled: true
+    description: "Vertex AI extension uses static API key without rotation"
+    api: list_extensions
+    condition: "manifest.authConfig.authType == 'API_KEY_AUTH' and createdAt older than {threshold} days"
+    threshold_ref: "extensions.max_api_key_age_days"
+    recommendation: "Rotate API keys regularly or migrate to OAuth 2.0 authentication."
+
+  - id: AUTH-GCP-EXT-002
+    name: "Extension with overly permissive scopes"
+    category: extensions
+    severity: HIGH
+    enabled: true
+    description: "Extension OAuth scopes are too broad"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: list_extensions
+    condition: "manifest.authConfig.oauthConfig.scopes contains 'https://www.googleapis.com/auth/cloud-platform'"
+    recommendation: "Use minimum required OAuth scopes for extension access."
+
+  - id: AUTH-GCP-EXT-003
+    name: "Extension calling external APIs"
+    category: extensions
+    severity: HIGH
+    enabled: true
+    description: "Extension makes calls to non-Google external APIs — SSRF risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    cwe: "CWE-918"
+    api: list_extensions
+    condition: "manifest.apiSpec.openApiUri not matches '^https://(.*\\.)?googleapis\\.com/'"
+    threshold_ref: "extensions.allowed_api_domains"
+    recommendation: "Restrict extensions to approved API endpoints only."
+
+  # ==================== MULTIMODAL / GEMINI SECURITY ====================
+  - id: AUTH-GCP-MULTI-001
+    name: "Gemini Vision without image safety settings"
+    category: multimodal
+    severity: HIGH
+    enabled: true
+    description: "Gemini Pro Vision endpoint has no image safety filters"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: describe_endpoint
+    condition: "deployedModels contains 'gemini' and safetySettings.harmCategory not contains 'HARM_CATEGORY_DANGEROUS_CONTENT'"
+    recommendation: "Configure all safety categories for multimodal Gemini endpoints."
+
+  - id: AUTH-GCP-MULTI-002
+    name: "Video processing without content analysis"
+    category: multimodal
+    severity: MEDIUM
+    enabled: true
+    description: "Video AI pipeline does not use content moderation"
+    api: list_custom_jobs
+    condition: "jobSpec contains 'video' and contentModerationEnabled != true"
+    recommendation: "Enable content moderation for video processing pipelines."
+
+  - id: AUTH-GCP-MULTI-003
+    name: "Audio transcription without PII redaction"
+    category: multimodal
+    severity: MEDIUM
+    enabled: true
+    description: "Speech-to-Text output not sanitized for PII"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    api: list_custom_jobs
+    condition: "jobSpec contains 'speech' and piiRedactionEnabled != true"
+    recommendation: "Enable PII redaction for audio transcription outputs."
+
+  # ==================== DATA EXFILTRATION PREVENTION ====================
+  - id: AUTH-GCP-DLP-001
+    name: "No DLP inspection on model inputs"
+    category: dlp
+    severity: HIGH
+    enabled: true
+    description: "Cloud DLP not inspecting prompts for sensitive data"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    api: list_dlp_jobs
+    condition: "inspectJobs filter(type == 'vertex-ai-input') | length == 0"
+    recommendation: "Configure Cloud DLP inspection templates for model input validation."
+
+  - id: AUTH-GCP-DLP-002
+    name: "Model outputs not deidentified"
+    category: dlp
+    severity: HIGH
+    enabled: true
+    description: "LLM responses not passing through DLP deidentification"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    api: list_dlp_jobs
+    condition: "deidentifyTemplates filter(scope contains 'vertex') | length == 0"
+    recommendation: "Configure DLP deidentification for model outputs before returning to users."
+
+  - id: AUTH-GCP-DLP-003
+    name: "No custom infoTypes for internal data"
+    category: dlp
+    severity: MEDIUM
+    enabled: true
+    description: "No custom DLP infoTypes defined for internal sensitive terms"
+    api: list_dlp_jobs
+    condition: "inspectTemplates[*].inspectConfig.customInfoTypes | length == 0"
+    threshold_ref: "dlp.internal_terms"
+    recommendation: "Create custom infoTypes for internal project names and codenames."
+
+  # ==================== VERTEX AI PIPELINES ====================
+  - id: AUTH-GCP-PIPE-001
+    name: "Pipeline without artifact encryption"
+    category: pipeline
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI Pipeline artifacts not encrypted with CMEK"
+    api: list_pipeline_jobs
+    condition: "encryptionSpec.kmsKeyName is null"
+    recommendation: "Configure CMEK encryption for all pipeline artifacts."
+
+  - id: AUTH-GCP-PIPE-002
+    name: "Pipeline with broad service account"
+    category: pipeline
+    severity: HIGH
+    enabled: true
+    description: "Pipeline uses default compute service account with broad permissions"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: list_pipeline_jobs
+    condition: "serviceAccount matches '@compute-sa' or serviceAccount matches 'default'"
+    recommendation: "Create dedicated service account with minimum required permissions for pipelines."
+
+  - id: AUTH-GCP-PIPE-003
+    name: "Pipeline without caching disabled for sensitive data"
+    category: pipeline
+    severity: MEDIUM
+    enabled: true
+    description: "Pipeline caches intermediate results that may contain sensitive data"
+    api: list_pipeline_jobs
+    condition: "pipelineSpec.components[*].cachingOptions.enableCache == true and dataSensitivity == 'HIGH'"
+    recommendation: "Disable caching for pipeline steps handling sensitive data."
+
+  # ==================== COST & ABUSE MONITORING ====================
+  - id: AUTH-GCP-COST-001
+    name: "No budget alert for Vertex AI"
+    category: cost
+    severity: MEDIUM
+    enabled: true
+    description: "No budget configured for Vertex AI spend"
+    api: "gcloud billing budgets list"
+    condition: "budgets not contains filter for aiplatform"
+    recommendation: "Create Cloud Billing budget with alerts for Vertex AI spend."
+
+  - id: AUTH-GCP-COST-002
+    name: "High-cost model without autoscaling limits"
+    category: cost
+    severity: MEDIUM
+    enabled: true
+    description: "Expensive model endpoint (Gemini Ultra, Claude) has no max replica limit"
+    api: describe_endpoint
+    condition: "deployedModels contains high_cost_model and automaticResources.maxReplicaCount is null"
+    threshold_ref: "cost.high_cost_models"
+    recommendation: "Set maximum replica count to control costs on premium model endpoints."
+
+  # ==================== RUNTIME BEHAVIORAL ANALYSIS ====================
+  - id: AUTH-GCP-RUNTIME-001
+    name: "No Cloud Monitoring for model drift"
+    category: runtime
+    severity: MEDIUM
+    enabled: true
+    description: "Model endpoint has no drift detection monitoring"
+    api: describe_endpoint
+    condition: "monitoringConfig.modelMonitoringConfig is null"
+    recommendation: "Enable Model Monitoring for prediction drift and data skew detection."
+
+  - id: AUTH-GCP-RUNTIME-002
+    name: "No alerting policy for endpoint errors"
+    category: runtime
+    severity: MEDIUM
+    enabled: true
+    description: "No Cloud Monitoring alert for endpoint error rates"
+    api: list_alert_policies
+    condition: "alertPolicies filter(condition.filter contains 'aiplatform' and 'error') | length == 0"
+    recommendation: "Create alerting policy for high error rates on AI endpoints."
+
+  - id: AUTH-GCP-RUNTIME-003
+    name: "Traffic splitting without monitoring"
+    category: runtime
+    severity: LOW
+    enabled: true
+    description: "Endpoint traffic split across models without comparative monitoring"
+    api: describe_endpoint
+    condition: "trafficSplit | length > 1 and monitoringConfig.comparativeModelMonitoring is null"
+    recommendation: "Enable comparative monitoring when A/B testing model versions."
+
+  # ==================== NETWORK / VPC SERVICE CONTROLS ====================
+  - id: AUTH-GCP-VPC-001
+    name: "No VPC Service Controls perimeter"
+    category: network
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI resources not protected by VPC Service Controls"
+    api: list_service_perimeters
+    condition: "servicePerimeters filter(status.resources contains 'aiplatform') | length == 0"
+    recommendation: "Create VPC Service Controls perimeter for Vertex AI to prevent data exfiltration."
+
+  - id: AUTH-GCP-VPC-002
+    name: "Perimeter allows ingress from anywhere"
+    category: network
+    severity: HIGH
+    enabled: true
+    description: "VPC Service Controls perimeter has overly permissive ingress rules"
+    api: list_service_perimeters
+    condition: "status.ingressPolicies[*].ingressFrom.sources contains '*'"
+    recommendation: "Restrict ingress sources to specific projects, identities, or access levels."
+
+  - id: AUTH-GCP-VPC-003
+    name: "Private Service Connect not configured"
+    category: network
+    severity: MEDIUM
+    enabled: true
+    description: "Vertex AI accessed over public internet instead of Private Service Connect"
+    api: describe_endpoint
+    condition: "privateEndpointConfig is null"
+    recommendation: "Configure Private Service Connect for private API access."
+
+  # ==================== MODEL GOVERNANCE ====================
+  - id: AUTH-GCP-GOV-001
+    name: "Model without labels"
+    category: governance
+    severity: LOW
+    enabled: true
+    description: "Vertex AI model missing required labels"
+    api: describe_model
+    condition: "labels not contains required_labels"
+    threshold_ref: "governance.required_tags"
+    recommendation: "Apply required labels (owner, environment, cost-center) to all models."
+
+  - id: AUTH-GCP-GOV-002
+    name: "Endpoint using deprecated model"
+    category: governance
+    severity: MEDIUM
+    enabled: true
+    description: "Endpoint deployed with deprecated/sunset model version"
+    api: describe_endpoint
+    condition: "deployedModels[*].model contains deprecated_models"
+    threshold_ref: "governance.deprecated_models"
+    recommendation: "Migrate to supported model versions before deprecation date."
+
+  - id: AUTH-GCP-GOV-003
+    name: "No Model Registry entry"
+    category: governance
+    severity: LOW
+    enabled: true
+    description: "Custom model not registered in Vertex AI Model Registry"
+    api: list_models
+    condition: "model.sourceUri not matches Model Registry pattern"
+    recommendation: "Register all production models in Vertex AI Model Registry for lineage tracking."
+
+  # ==================== GENERATIVE AI STUDIO ====================
+  - id: AUTH-GCP-STUDIO-001
+    name: "Shared prompt in public gallery"
+    category: prompt_security
+    severity: HIGH
+    enabled: true
+    description: "System prompt shared in public Gen AI Studio gallery"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    api: list_prompts
+    condition: "visibility == 'PUBLIC' and systemInstruction contains sensitive_patterns"
+    recommendation: "Remove sensitive information from prompts before sharing publicly."
+
+  - id: AUTH-GCP-STUDIO-002
+    name: "Prompt version without change tracking"
+    category: prompt_security
+    severity: LOW
+    enabled: true
+    description: "Prompt modifications not tracked in version history"
+    api: list_prompts
+    condition: "versions | length == 0 or versions[*].changelog is null"
+    recommendation: "Use prompt versioning to track changes and enable rollback."
+
+  # ==================== FEATURE STORE SECURITY ====================
+  - id: AUTH-GCP-FS-001
+    name: "Feature Store without access control"
+    category: feature_store
+    severity: HIGH
+    enabled: true
+    description: "Vertex AI Feature Store entity type has no IAM bindings"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: list_entity_types
+    condition: "iamPolicy.bindings | length == 0"
+    recommendation: "Configure fine-grained IAM bindings for feature store access."
+
+  - id: AUTH-GCP-FS-002
+    name: "Feature Store with stale features"
+    category: feature_store
+    severity: MEDIUM
+    enabled: true
+    description: "Features not updated within freshness threshold — data quality risk"
+    api: list_features
+    condition: "updateTime older than {threshold} days"
+    threshold_ref: "knowledge_base.max_sync_age_days"
+    recommendation: "Configure feature monitoring and update schedule for freshness."

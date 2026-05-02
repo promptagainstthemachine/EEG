@@ -1,0 +1,509 @@
+# EEG - AWS Bedrock/SageMaker Live Security Checks
+# Configuration for authenticated resource scanning
+
+metadata:
+  cloud: aws
+  version: "2.2.0"
+  last_updated: "2026-05-03"
+
+# API endpoints and commands used for each check category
+api_config:
+  bedrock:
+    service: bedrock
+    region_aware: true
+    commands:
+      list_guardrails: "aws bedrock list-guardrails --output json"
+      get_guardrail: "aws bedrock get-guardrail --guardrail-identifier {id} --output json"
+      list_agents: "aws bedrock-agent list-agents --output json"
+      get_agent: "aws bedrock-agent get-agent --agent-id {id} --output json"
+      list_knowledge_bases: "aws bedrock-agent list-knowledge-bases --output json"
+      get_knowledge_base: "aws bedrock-agent get-knowledge-base --knowledge-base-id {id} --output json"
+      list_model_customization_jobs: "aws bedrock list-model-customization-jobs --output json"
+      get_model_invocation_logging: "aws bedrock get-model-invocation-logging-configuration --output json"
+      list_evaluation_jobs: "aws bedrock list-evaluation-jobs --output json"
+      list_provisioned_throughputs: "aws bedrock list-provisioned-model-throughputs --output json"
+      list_flows: "aws bedrock-agent list-flows --output json"
+      get_flow: "aws bedrock-agent get-flow --flow-identifier {id} --output json"
+      list_inference_profiles: "aws bedrock list-inference-profiles --output json"
+      get_inference_profile: "aws bedrock get-inference-profile --inference-profile-identifier {id} --output json"
+  
+  budgets:
+    service: budgets
+    commands:
+      describe_budgets: "aws budgets describe-budgets --account-id {account_id} --output json"
+  
+  dlp:
+    service: macie2
+    commands:
+      list_findings: "aws macie2 list-findings --output json"
+      get_finding: "aws macie2 get-findings --finding-ids {id} --output json"
+  
+  iam:
+    service: iam
+    commands:
+      list_roles: "aws iam list-roles --output json"
+      get_role_policy: "aws iam get-role-policy --role-name {role} --policy-name {policy} --output json"
+      list_attached_role_policies: "aws iam list-attached-role-policies --role-name {role} --output json"
+  
+  cloudwatch:
+    service: cloudwatch
+    commands:
+      list_metrics: "aws cloudwatch list-metrics --namespace AWS/Bedrock --output json"
+      describe_alarms: "aws cloudwatch describe-alarms --output json"
+  
+  vpc:
+    service: ec2
+    commands:
+      describe_security_groups: "aws ec2 describe-security-groups --output json"
+      describe_vpc_endpoints: "aws ec2 describe-vpc-endpoints --output json"
+
+# Check definitions
+checks:
+  # ==================== GUARDRAILS ====================
+  - id: AUTH-AWS-GUARD-001
+    name: "No Bedrock guardrails configured"
+    category: guardrail
+    severity: CRITICAL
+    enabled: true
+    description: "Account has no Bedrock guardrails — all models vulnerable to prompt injection"
+    owasp_llm: "LLM01: Prompt Injection"
+    cwe: "CWE-74"
+    api: list_guardrails
+    condition: "result.guardrails | length == 0"
+    recommendation: "Create at least one Bedrock guardrail with PROMPT_ATTACK, HATE, VIOLENCE, SEXUAL, and SELF_HARM filters enabled."
+    references:
+      - "https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html"
+
+  - id: AUTH-AWS-GUARD-002
+    name: "Guardrail with weak filter strength"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Guardrail content filter has LOW or NONE strength"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: get_guardrail
+    condition_fields:
+      - path: "contentPolicy.filtersConfig[*].inputStrength"
+        operator: "in"
+        values: ["LOW", "NONE"]
+      - path: "contentPolicy.filtersConfig[*].outputStrength"
+        operator: "in"
+        values: ["LOW", "NONE"]
+    threshold_ref: "guardrail.min_input_strength"
+    recommendation: "Set all content filter strengths to HIGH for production guardrails."
+
+  - id: AUTH-AWS-GUARD-003
+    name: "Missing PROMPT_ATTACK filter"
+    category: guardrail
+    severity: HIGH
+    enabled: true
+    description: "Guardrail does not include prompt injection detection"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: get_guardrail
+    condition: "PROMPT_ATTACK not in contentPolicy.filtersConfig[*].type"
+    recommendation: "Add PROMPT_ATTACK filter type with HIGH input strength."
+
+  - id: AUTH-AWS-GUARD-004
+    name: "PII filter using ANONYMIZE instead of BLOCK"
+    category: guardrail
+    severity: MEDIUM
+    enabled: true
+    description: "Sensitive PII types should be blocked, not anonymized"
+    api: get_guardrail
+    condition_fields:
+      - path: "sensitiveInformationPolicy.piiEntitiesConfig[*]"
+        check: "action == ANONYMIZE and type in sensitive_pii_types"
+    threshold_ref: "guardrail.sensitive_pii_types"
+    recommendation: "Set PII action to BLOCK for sensitive types (API keys, credentials, SSN)."
+
+  - id: AUTH-AWS-GUARD-005
+    name: "Guardrail in DRAFT status"
+    category: guardrail
+    severity: MEDIUM
+    enabled: true
+    description: "Guardrail is not in READY status — may not be actively protecting"
+    api: get_guardrail
+    condition: "status != 'READY'"
+    recommendation: "Ensure guardrail is in READY status before associating with models."
+
+  # ==================== AGENTS ====================
+  - id: AUTH-AWS-AGENT-001
+    name: "Agent without guardrail"
+    category: agent
+    severity: CRITICAL
+    enabled: true
+    description: "Bedrock agent has no guardrail attached — vulnerable to prompt injection"
+    owasp_llm: "LLM01: Prompt Injection"
+    cwe: "CWE-74"
+    api: get_agent
+    condition: "guardrailConfiguration.guardrailIdentifier is null"
+    recommendation: "Attach a Bedrock guardrail with PROMPT_ATTACK filter to this agent."
+
+  - id: AUTH-AWS-AGENT-002
+    name: "Agent with excessive action groups"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Agent has too many action groups — increased attack surface"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: get_agent
+    condition: "actionGroups | length > {threshold}"
+    threshold_ref: "agent.max_action_groups"
+    recommendation: "Reduce agent action groups to minimize attack surface. Split into multiple specialized agents."
+
+  - id: AUTH-AWS-AGENT-003
+    name: "Agent action group without human confirmation"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Mutating action group does not require human confirmation"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: get_agent
+    condition_fields:
+      - path: "actionGroups[*]"
+        check: "parentActionGroupSignature in sensitive_actions and requireConfirmation != ENABLED"
+    threshold_ref: "agent.sensitive_actions"
+    recommendation: "Enable human confirmation for action groups that perform mutations (CREATE, UPDATE, DELETE)."
+
+  - id: AUTH-AWS-AGENT-004
+    name: "Agent with code interpreter enabled"
+    category: agent
+    severity: HIGH
+    enabled: true
+    description: "Agent can execute arbitrary code — high risk of code injection"
+    owasp_llm: "LLM06: Excessive Agency"
+    cwe: "CWE-94"
+    api: get_agent
+    condition: "agentResourceRoleArn contains 'CodeInterpreter' or codeInterpreterEnabled == true"
+    recommendation: "Disable code interpreter unless strictly required. Implement strict sandboxing if enabled."
+
+  # ==================== KNOWLEDGE BASES ====================
+  - id: AUTH-AWS-KB-001
+    name: "Knowledge base with public data source"
+    category: knowledge_base
+    severity: CRITICAL
+    enabled: true
+    description: "Knowledge base data source is publicly accessible — RAG poisoning risk"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: get_knowledge_base
+    condition: "storageConfiguration.s3Configuration.bucketArn has public access"
+    recommendation: "Ensure all knowledge base data sources are private with strict IAM policies."
+
+  - id: AUTH-AWS-KB-002
+    name: "Knowledge base not synced recently"
+    category: knowledge_base
+    severity: MEDIUM
+    enabled: true
+    description: "Knowledge base has stale data — last sync exceeded threshold"
+    api: get_knowledge_base
+    condition: "updatedAt older than {threshold} days"
+    threshold_ref: "knowledge_base.max_sync_age_days"
+    recommendation: "Configure automatic sync schedule for knowledge bases to keep data current."
+
+  - id: AUTH-AWS-KB-003
+    name: "Knowledge base without chunking strategy"
+    category: knowledge_base
+    severity: LOW
+    enabled: true
+    description: "No chunking configuration — may affect retrieval quality"
+    api: get_knowledge_base
+    condition: "knowledgeBaseConfiguration.vectorKnowledgeBaseConfiguration.chunkingConfiguration is null"
+    recommendation: "Configure chunking strategy appropriate for your document types."
+
+  # ==================== FINE-TUNING ====================
+  - id: AUTH-AWS-FT-001
+    name: "Active fine-tuning job with unencrypted training data"
+    category: fine_tuning
+    severity: HIGH
+    enabled: true
+    description: "Model customization job uses unencrypted training data"
+    api: list_model_customization_jobs
+    condition: "trainingDataConfig.s3Uri not encrypted or customModelKmsKeyArn is null"
+    recommendation: "Encrypt training data at rest and specify a KMS key for the custom model."
+
+  - id: AUTH-AWS-FT-002
+    name: "Fine-tuning job without output encryption"
+    category: fine_tuning
+    severity: HIGH
+    enabled: true
+    description: "Custom model output is not encrypted with customer-managed key"
+    api: list_model_customization_jobs
+    condition: "outputDataConfig.s3Uri not encrypted"
+    recommendation: "Configure output S3 bucket with encryption and specify customModelKmsKeyArn."
+
+  # ==================== EVALUATION ====================
+  - id: AUTH-AWS-EVAL-001
+    name: "No evaluation jobs configured"
+    category: evaluation
+    severity: HIGH
+    enabled: true
+    description: "No model evaluation jobs found — safety testing not automated"
+    owasp_llm: "LLM09: Improper Content Filtering"
+    api: list_evaluation_jobs
+    condition: "evaluationJobs | length == 0"
+    recommendation: "Create evaluation jobs to test model safety, toxicity, and prompt injection resistance."
+    references:
+      - "https://docs.aws.amazon.com/bedrock/latest/userguide/model-evaluation.html"
+
+  - id: AUTH-AWS-EVAL-002
+    name: "Evaluation job without safety metrics"
+    category: evaluation
+    severity: MEDIUM
+    enabled: true
+    description: "Evaluation job does not include safety-related metrics"
+    api: list_evaluation_jobs
+    condition_fields:
+      - path: "evaluationConfig.automated.datasetMetricConfigs[*].metricNames"
+        check: "not contains any of required_eval_types"
+    threshold_ref: "evaluation.required_eval_types"
+    recommendation: "Include SAFETY, TOXICITY, and PROMPT_INJECTION metrics in evaluation jobs."
+
+  # ==================== RATE LIMITS ====================
+  - id: AUTH-AWS-RATE-001
+    name: "No provisioned throughput configured"
+    category: rate_limit
+    severity: LOW
+    enabled: true
+    description: "Using on-demand pricing without rate protection — DoS risk"
+    api: list_provisioned_throughputs
+    condition: "provisionedModelThroughputs | length == 0"
+    recommendation: "Consider provisioned throughput for production workloads to ensure capacity and cost control."
+
+  # ==================== LOGGING ====================
+  - id: AUTH-AWS-LOG-001
+    name: "Model invocation logging disabled"
+    category: logging
+    severity: CRITICAL
+    enabled: true
+    description: "No audit trail for AI inference — compliance and forensics gap"
+    api: get_model_invocation_logging
+    condition: "loggingConfig.cloudWatchConfig.logGroupName is null and loggingConfig.s3Config.bucketName is null"
+    recommendation: "Enable model invocation logging to CloudWatch and/or S3 for audit compliance."
+    references:
+      - "https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html"
+
+  - id: AUTH-AWS-LOG-002
+    name: "Logging without encryption"
+    category: logging
+    severity: HIGH
+    enabled: true
+    description: "Model invocation logs are not encrypted"
+    api: get_model_invocation_logging
+    condition: "loggingConfig.s3Config.kmsKeyId is null"
+    threshold_ref: "logging.require_log_encryption"
+    recommendation: "Configure KMS encryption for model invocation logs containing sensitive prompts."
+
+  - id: AUTH-AWS-LOG-003
+    name: "Input/output logging both disabled"
+    category: logging
+    severity: MEDIUM
+    enabled: true
+    description: "Neither input nor output logging is enabled — limited observability"
+    api: get_model_invocation_logging
+    condition: "loggingConfig.textDataDeliveryEnabled == false and loggingConfig.imageDataDeliveryEnabled == false"
+    recommendation: "Enable at least text data delivery for audit trails and debugging."
+
+  # ==================== AGENT RUNTIME SECURITY ====================
+  - id: AUTH-AWS-RUNTIME-001
+    name: "Agent with unrestricted code interpreter"
+    category: runtime
+    severity: CRITICAL
+    enabled: true
+    description: "Code interpreter enabled without execution sandbox or restrictions"
+    owasp_llm: "LLM06: Excessive Agency"
+    cwe: "CWE-94"
+    api: get_agent
+    condition: "codeInterpreterConfiguration.enabled == true and codeInterpreterConfiguration.sandboxEnabled != true"
+    recommendation: "Enable sandboxing for code interpreter and restrict file system access."
+
+  - id: AUTH-AWS-RUNTIME-002
+    name: "Agent memory persistence without encryption"
+    category: runtime
+    severity: HIGH
+    enabled: true
+    description: "Agent memory/session state stored without encryption"
+    owasp_llm: "LLM08: Excessive Agency"
+    api: get_agent
+    condition: "memoryConfiguration.enabled == true and memoryConfiguration.storageConfiguration.kmsKeyArn is null"
+    recommendation: "Enable KMS encryption for agent memory storage containing conversation history."
+
+  - id: AUTH-AWS-RUNTIME-003
+    name: "Agent with long session timeout"
+    category: runtime
+    severity: MEDIUM
+    enabled: true
+    description: "Agent session timeout exceeds security threshold — session hijacking risk"
+    api: get_agent
+    condition: "agentConfiguration.sessionTimeoutInSeconds > {threshold}"
+    threshold_ref: "runtime.max_session_timeout_seconds"
+    recommendation: "Reduce session timeout to 3600 seconds (1 hour) or less."
+
+  - id: AUTH-AWS-RUNTIME-004
+    name: "Function calling without schema validation"
+    category: runtime
+    severity: HIGH
+    enabled: true
+    description: "Agent action group uses LAMBDA without input validation"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: get_agent
+    condition: "actionGroups[*].actionGroupExecutor.lambda exists and apiSchema is null"
+    recommendation: "Define OpenAPI schema for all Lambda action groups to enable input validation."
+
+  # ==================== NETWORK EGRESS ====================
+  - id: AUTH-AWS-NET-001
+    name: "Agent with unrestricted network egress"
+    category: network
+    severity: HIGH
+    enabled: true
+    description: "Agent Lambda functions can access public internet — data exfiltration risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    api: get_agent
+    condition: "actionGroups[*].actionGroupExecutor.lambda VPC configuration allows 0.0.0.0/0 egress"
+    recommendation: "Restrict agent Lambda egress to specific allowed endpoints via VPC and security groups."
+
+  - id: AUTH-AWS-NET-002
+    name: "Knowledge base VPC endpoint missing"
+    category: network
+    severity: MEDIUM
+    enabled: true
+    description: "Knowledge base S3 access goes over public internet"
+    api: get_knowledge_base
+    condition: "storageConfiguration.s3Configuration.vpcEndpoint is null"
+    recommendation: "Configure S3 VPC endpoint for knowledge base access to keep traffic private."
+
+  # ==================== MULTIMODAL SECURITY ====================
+  - id: AUTH-AWS-MULTI-001
+    name: "Multimodal model without image content filter"
+    category: multimodal
+    severity: HIGH
+    enabled: true
+    description: "Vision-capable model has no image content filtering — multimodal injection risk"
+    owasp_llm: "LLM01: Prompt Injection"
+    api: get_guardrail
+    condition: "imagePolicy is null and model supports vision"
+    recommendation: "Enable image content policy to filter malicious visual prompts."
+
+  - id: AUTH-AWS-MULTI-002
+    name: "Document processing without sanitization"
+    category: multimodal
+    severity: HIGH
+    enabled: true
+    description: "RAG pipeline ingests documents without content sanitization"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    api: get_knowledge_base
+    condition: "dataSourceConfiguration.parsingConfiguration.parsingStrategy != 'BEDROCK_FOUNDATION_MODEL'"
+    recommendation: "Use Bedrock foundation model parsing for intelligent document sanitization."
+
+  # ==================== COST & ABUSE MONITORING ====================
+  - id: AUTH-AWS-COST-001
+    name: "No budget alarm for Bedrock spend"
+    category: cost
+    severity: MEDIUM
+    enabled: true
+    description: "No AWS Budget alarm configured for Bedrock — runaway cost risk"
+    api: "aws budgets describe-budgets"
+    condition: "Budgets not contains filter for bedrock"
+    recommendation: "Create AWS Budget with alarm for Bedrock service spend threshold."
+
+  - id: AUTH-AWS-COST-002
+    name: "High-cost model without rate limiting"
+    category: cost
+    severity: MEDIUM
+    enabled: true
+    description: "Expensive model (Claude 3 Opus, GPT-4) enabled without provisioned throughput"
+    api: list_provisioned_throughputs
+    condition: "high_cost_models in use and no matching provisioned throughput"
+    threshold_ref: "cost.high_cost_models"
+    recommendation: "Use provisioned throughput for expensive models to control costs."
+
+  # ==================== DATA EXFILTRATION PREVENTION ====================
+  - id: AUTH-AWS-DLP-001
+    name: "Guardrail missing blocked output topics"
+    category: dlp
+    severity: HIGH
+    enabled: true
+    description: "No topic policy to block sensitive data in responses"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    api: get_guardrail
+    condition: "topicPolicy.topicsConfig | filter(type == 'DENY') | length == 0"
+    recommendation: "Configure topic policies to block responses containing PII, credentials, or internal data."
+
+  - id: AUTH-AWS-DLP-002
+    name: "Word filter missing for internal terms"
+    category: dlp
+    severity: MEDIUM
+    enabled: true
+    description: "No word filter to block internal project/codenames in responses"
+    api: get_guardrail
+    condition: "wordPolicy.wordsConfig | length == 0"
+    threshold_ref: "dlp.internal_terms"
+    recommendation: "Add word filters for internal project names, codenames, and sensitive identifiers."
+
+  # ==================== MODEL GOVERNANCE ====================
+  - id: AUTH-AWS-GOV-001
+    name: "Custom model without model card"
+    category: governance
+    severity: LOW
+    enabled: true
+    description: "Fine-tuned model has no model card — documentation gap"
+    api: list_model_customization_jobs
+    condition: "customModelArn exists and tags not contains 'model-card'"
+    recommendation: "Document model capabilities, limitations, and intended use in a model card."
+
+  - id: AUTH-AWS-GOV-002
+    name: "Model endpoint without tagging"
+    category: governance
+    severity: LOW
+    enabled: true
+    description: "Bedrock resources lack required tags — governance policy violation"
+    api: list_agents
+    condition: "tags not contains required_tags"
+    threshold_ref: "governance.required_tags"
+    recommendation: "Apply required tags (owner, environment, cost-center) to all Bedrock resources."
+
+  # ==================== PROMPT FLOW SECURITY ====================
+  - id: AUTH-AWS-FLOW-001
+    name: "Prompt flow with inline credentials"
+    category: prompt_flow
+    severity: CRITICAL
+    enabled: true
+    description: "Prompt flow definition contains hardcoded credentials or API keys"
+    owasp_llm: "LLM02: Sensitive Information Disclosure"
+    cwe: "CWE-798"
+    api: get_flow
+    condition: "definition contains pattern matching API keys or secrets"
+    recommendation: "Use AWS Secrets Manager references instead of inline credentials in flows."
+
+  - id: AUTH-AWS-FLOW-002
+    name: "Prompt flow with external HTTP calls"
+    category: prompt_flow
+    severity: HIGH
+    enabled: true
+    description: "Flow makes HTTP calls to external endpoints — SSRF risk"
+    owasp_llm: "LLM06: Excessive Agency"
+    cwe: "CWE-918"
+    api: get_flow
+    condition: "nodes contains type 'HTTP' with endpoint not in allowed_endpoints"
+    threshold_ref: "prompt_flow.allowed_endpoints"
+    recommendation: "Restrict external HTTP calls to pre-approved endpoints only."
+
+  # ==================== INFERENCE PROFILE SECURITY ====================
+  - id: AUTH-AWS-INF-001
+    name: "Inference profile with cross-region access"
+    category: inference
+    severity: MEDIUM
+    enabled: true
+    description: "Inference profile allows cross-region model access — latency and compliance concerns"
+    api: get_inference_profile
+    condition: "models[*].modelArn contains different regions"
+    recommendation: "Use single-region inference profiles unless cross-region failover is required."
+
+  - id: AUTH-AWS-INF-002
+    name: "No model access logging on inference profile"
+    category: inference
+    severity: HIGH
+    enabled: true
+    description: "Inference profile usage not logged — no audit trail"
+    api: get_inference_profile
+    condition: "status == 'ACTIVE' and model_invocation_logging disabled"
+    recommendation: "Enable model invocation logging for all active inference profiles."

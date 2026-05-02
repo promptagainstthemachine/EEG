@@ -3,13 +3,15 @@ EEG - GCP Authenticated Scanner
 Live audit of Vertex AI endpoints, models, safety settings, and IAM.
 Supports both SDK and CLI modes for cloud shell compatibility.
 Auto-detects permissions and gracefully handles restricted access.
+Config-driven checks loaded from eeg/config/gcp_live_checks.yaml
 """
 
 import os
 import subprocess
 import json
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from eeg.collector import Collector, Finding, Severity
+from eeg.auth_scanner.check_runner import CheckRunner, get_threshold
 
 try:
     from google.cloud import aiplatform
@@ -45,7 +47,7 @@ def _safe_cli_call(cmd: List[str], timeout: int = 60) -> Tuple[bool, str, str]:
 class GCPAuthScanner:
     """
     Live audit of GCP Vertex AI resources using authenticated API calls.
-    Gracefully handles permission restrictions without breaking scan flow.
+    Config-driven checks from gcp_live_checks.yaml.
     """
 
     def __init__(self, auth_context: dict):

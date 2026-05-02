@@ -3,6 +3,7 @@ EEG - AWS Authenticated Scanner
 Live audit of Bedrock agents, guardrails, knowledge bases, model logging,
 IAM, and network. Supports both SDK and CLI modes for cloud shell compatibility.
 Auto-detects permissions and gracefully handles restricted access.
+Config-driven checks loaded from eeg/config/aws_live_checks.yaml
 """
 
 import os
@@ -11,6 +12,7 @@ import subprocess
 import json
 from typing import List, Dict, Optional, Tuple
 from eeg.collector import Collector, Finding, Severity
+from eeg.auth_scanner.check_runner import CheckRunner, get_threshold
 
 try:
     import boto3
@@ -65,6 +67,7 @@ class AWSAuthScanner:
     """
     Live audit of AWS Bedrock resources using authenticated API calls.
     Gracefully handles permission restrictions without breaking scan flow.
+    Config-driven checks from aws_live_checks.yaml.
     """
 
     def __init__(self, auth_context: dict):
@@ -73,8 +76,12 @@ class AWSAuthScanner:
         self.region = auth_context.get("region", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
         self._use_cli = auth_context.get("source") in ("aws_cli", "cloud_shell")
         self._has_default_guardrails = False
+        self._check_runner: Optional[CheckRunner] = None
 
     def scan(self, collector: Collector):
+        # Initialize config-driven check runner
+        self._check_runner = CheckRunner("aws", collector)
+        
         if not HAS_BOTO3 and not self._use_cli:
             print("  [AUTH-AWS] boto3 not installed — trying CLI fallback")
             self._scan_with_cli(collector)
@@ -85,17 +92,14 @@ class AWSAuthScanner:
         else:
             self._scan_with_cli(collector)
         
-        # Final check: Report if no default guardrails exist
+        # Final check: Report if no default guardrails exist (AUTH-AWS-GUARD-001)
         if not self._has_default_guardrails:
-            collector.add_finding(Finding(
-                rule_id="AUTH-AWS-GUARD-DEFAULT", severity=Severity.CRITICAL,
-                category="guardrail", cloud_env="aws",
-                file_path="live:bedrock:account", line_number=0,
-                code_snippet="defaultGuardrails=NOT_CONFIGURED",
-                message="Account does NOT have default guardrails configured for Bedrock",
-                recommendation="Create at least one Bedrock guardrail with PROMPT_ATTACK, PII filters, and content moderation. Attach it to all agents and model invocations.",
-                owasp_llm="LLM01: Prompt Injection",
-            ))
+            self._check_runner.add_finding_if_enabled(
+                "AUTH-AWS-GUARD-001",
+                file_path="live:bedrock:account",
+                code_snippet="guardrails=[]",
+                message_override="Account has no Bedrock guardrails — all models vulnerable to prompt injection",
+            )
 
     def _scan_with_sdk(self, collector: Collector):
         """Scan using boto3 SDK."""
@@ -138,6 +142,9 @@ class AWSAuthScanner:
         self._check_knowledge_bases(bedrock_agent, s3, collector)
         self._check_model_invocation_logging(bedrock, collector)
         self._check_iam_policies(iam, collector)
+        self._check_evaluation_jobs(bedrock, collector)
+        self._check_fine_tuning(bedrock, collector)
+        self._check_provisioned_throughput(bedrock, collector)
 
     def _scan_with_cli(self, collector: Collector):
         """Scan using AWS CLI for cloud shell environments."""
@@ -162,6 +169,10 @@ class AWSAuthScanner:
         self._check_guardrails_cli(collector)
         self._check_agents_cli(collector)
         self._check_logging_cli(collector)
+        self._check_evaluation_jobs_cli(collector)
+        self._check_fine_tuning_cli(collector)
+        self._check_provisioned_throughput_cli(collector)
+        self._check_knowledge_bases_cli(collector)
 
     def _check_guardrails_cli(self, collector: Collector):
         """Check Bedrock guardrails using AWS CLI."""
@@ -774,3 +785,356 @@ class AWSAuthScanner:
                                 ))
         except ClientError as e:
             print(f"  [AUTH-AWS] IAM audit error: {e}")
+
+    # ── Evaluation Jobs (SDK) ───────────────────────────────────────
+    def _check_evaluation_jobs(self, bedrock, collector: Collector):
+        """Check if evaluation/red-team jobs exist (SDK)."""
+        print("  [AUTH-AWS] Auditing evaluation jobs...")
+        try:
+            jobs = _paginate(bedrock.list_evaluation_jobs, "jobSummaries", maxResults=100)
+            collector.add_completed_check("sdk_list_evaluation_jobs")
+            
+            if not jobs:
+                collector.add_finding(Finding(
+                    rule_id="AUTH-AWS-EVAL-001", severity=Severity.MEDIUM,
+                    category="evaluation", cloud_env="aws",
+                    file_path="live:bedrock:evaluations", line_number=0,
+                    code_snippet="evaluationJobs=[]",
+                    message="No model evaluation jobs found — AI red-teaming not configured",
+                    recommendation="Create evaluation jobs using human or automated evaluators to test model safety and accuracy before production.",
+                ))
+            else:
+                print(f"  [AUTH-AWS] Found {len(jobs)} evaluation job(s)")
+                completed = [j for j in jobs if j.get("status") == "Completed"]
+                if not completed:
+                    collector.add_finding(Finding(
+                        rule_id="AUTH-AWS-EVAL-002", severity=Severity.LOW,
+                        category="evaluation", cloud_env="aws",
+                        file_path="live:bedrock:evaluations", line_number=0,
+                        code_snippet=f"evaluationJobs={len(jobs)} completed=0",
+                        message="Evaluation jobs exist but none have completed successfully",
+                        recommendation="Ensure evaluation jobs complete to get model safety metrics.",
+                    ))
+        except ClientError as e:
+            collector.add_permission_issue("sdk_list_evaluation_jobs", "bedrock:ListEvaluationJobs", str(e))
+            print(f"  [AUTH-AWS] Cannot list evaluation jobs: {str(e)[:80]}")
+
+    def _check_fine_tuning(self, bedrock, collector: Collector):
+        """Check fine-tuning/customization jobs for security (SDK)."""
+        print("  [AUTH-AWS] Auditing fine-tuning jobs...")
+        try:
+            jobs = _paginate(bedrock.list_model_customization_jobs, "modelCustomizationJobSummaries", maxResults=100)
+            collector.add_completed_check("sdk_list_customization_jobs")
+            
+            if jobs:
+                print(f"  [AUTH-AWS] Found {len(jobs)} fine-tuning job(s)")
+                for job in jobs:
+                    job_name = job.get("jobName", "unknown")
+                    job_arn = job.get("jobArn", "")
+                    
+                    try:
+                        detail = bedrock.get_model_customization_job(jobIdentifier=job_arn)
+                        
+                        # Check output KMS encryption
+                        output_cfg = detail.get("outputDataConfig", {})
+                        if not output_cfg.get("kmsKeyId"):
+                            collector.add_finding(Finding(
+                                rule_id="AUTH-AWS-FT-002", severity=Severity.HIGH,
+                                category="model", cloud_env="aws",
+                                file_path=f"live:fine-tune:{job_name}", line_number=0,
+                                code_snippet="outputDataConfig.kmsKeyId=null",
+                                message=f"Fine-tuning job '{job_name}' output not encrypted with KMS",
+                                recommendation="Specify kmsKeyId in outputDataConfig to encrypt fine-tuned model artifacts.",
+                            ))
+                    except ClientError:
+                        pass
+        except ClientError as e:
+            collector.add_permission_issue("sdk_list_customization_jobs", "bedrock:ListModelCustomizationJobs", str(e))
+            print(f"  [AUTH-AWS] Cannot list fine-tuning jobs: {str(e)[:80]}")
+
+    def _check_provisioned_throughput(self, bedrock, collector: Collector):
+        """Check rate limits and provisioned throughput (SDK)."""
+        print("  [AUTH-AWS] Auditing provisioned throughput...")
+        try:
+            throughputs = _paginate(bedrock.list_provisioned_model_throughputs, "provisionedModelSummaries", maxResults=100)
+            collector.add_completed_check("sdk_list_throughputs")
+            
+            if not throughputs:
+                collector.add_finding(Finding(
+                    rule_id="AUTH-AWS-RATE-001", severity=Severity.LOW,
+                    category="policy", cloud_env="aws",
+                    file_path="live:bedrock:provisioned-throughput", line_number=0,
+                    code_snippet="provisionedThroughputs=[]",
+                    message="No provisioned throughput configured — using on-demand which may have rate variability",
+                    recommendation="Consider provisioned throughput for production workloads to ensure consistent rate limits.",
+                ))
+            else:
+                print(f"  [AUTH-AWS] Found {len(throughputs)} provisioned throughput(s)")
+        except ClientError as e:
+            collector.add_permission_issue("sdk_list_throughputs", "bedrock:ListProvisionedModelThroughputs", str(e))
+            print(f"  [AUTH-AWS] Cannot list provisioned throughputs: {str(e)[:80]}")
+
+    # ── Evaluation Jobs (Red-Team Detection) ────────────────────────
+    def _check_evaluation_jobs_cli(self, collector: Collector):
+        """Check if evaluation/red-team jobs exist."""
+        print("  [AUTH-AWS] Auditing evaluation jobs (CLI)...")
+        
+        success, stdout, error = _safe_cli_call(
+            ["aws", "bedrock", "list-evaluation-jobs", "--output", "json"]
+        )
+        
+        if not success:
+            if "not recognized" in error.lower() or "unknown" in error.lower():
+                collector.add_skipped_check("evaluation_jobs_not_supported")
+                return
+            collector.add_permission_issue("list_evaluation_jobs", "bedrock:ListEvaluationJobs", error)
+            collector.add_skipped_check("list_evaluation_jobs")
+            return
+        
+        collector.add_completed_check("list_evaluation_jobs")
+        
+        try:
+            data = json.loads(stdout)
+            jobs = data.get("jobSummaries", [])
+            
+            if not jobs:
+                collector.add_finding(Finding(
+                    rule_id="AUTH-AWS-EVAL-001", severity=Severity.MEDIUM,
+                    category="evaluation", cloud_env="aws",
+                    file_path="live:bedrock:evaluations", line_number=0,
+                    code_snippet="evaluationJobs=[]",
+                    message="No model evaluation jobs found — AI red-teaming not configured",
+                    recommendation="Create evaluation jobs using human or automated evaluators to test model safety and accuracy before production.",
+                ))
+            else:
+                print(f"  [AUTH-AWS] Found {len(jobs)} evaluation job(s)")
+                # Check for recent evaluations
+                completed = [j for j in jobs if j.get("status") == "COMPLETED"]
+                if not completed:
+                    collector.add_finding(Finding(
+                        rule_id="AUTH-AWS-EVAL-002", severity=Severity.LOW,
+                        category="evaluation", cloud_env="aws",
+                        file_path="live:bedrock:evaluations", line_number=0,
+                        code_snippet=f"evaluationJobs={len(jobs)} completed=0",
+                        message="Evaluation jobs exist but none have completed successfully",
+                        recommendation="Ensure evaluation jobs complete to get model safety metrics.",
+                    ))
+        except json.JSONDecodeError:
+            pass
+
+    def _check_fine_tuning_cli(self, collector: Collector):
+        """Check fine-tuning/customization jobs for security."""
+        print("  [AUTH-AWS] Auditing fine-tuning/customization jobs (CLI)...")
+        
+        # Check customization jobs
+        success, stdout, error = _safe_cli_call(
+            ["aws", "bedrock", "list-model-customization-jobs", "--output", "json"]
+        )
+        
+        if success:
+            collector.add_completed_check("list_customization_jobs")
+            try:
+                data = json.loads(stdout)
+                jobs = data.get("modelCustomizationJobSummaries", [])
+                
+                if jobs:
+                    print(f"  [AUTH-AWS] Found {len(jobs)} fine-tuning job(s)")
+                    for job in jobs:
+                        job_name = job.get("jobName", "unknown")
+                        job_arn = job.get("jobArn", "")
+                        
+                        # Check for training data location (S3)
+                        # Get job details
+                        detail_success, detail_stdout, _ = _safe_cli_call(
+                            ["aws", "bedrock", "get-model-customization-job", "--job-identifier", job_arn, "--output", "json"]
+                        )
+                        
+                        if detail_success:
+                            try:
+                                detail = json.loads(detail_stdout)
+                                training_data = detail.get("trainingDataConfig", {})
+                                s3_uri = training_data.get("s3Uri", "")
+                                
+                                if s3_uri and "public" in s3_uri.lower():
+                                    collector.add_finding(Finding(
+                                        rule_id="AUTH-AWS-FT-001", severity=Severity.CRITICAL,
+                                        category="model", cloud_env="aws",
+                                        file_path=f"live:fine-tune:{job_name}", line_number=0,
+                                        code_snippet=f"trainingDataS3Uri={s3_uri[:100]}",
+                                        message=f"Fine-tuning job '{job_name}' uses potentially public S3 training data",
+                                        recommendation="Ensure training data S3 bucket has strict access controls to prevent data poisoning.",
+                                        owasp_llm="LLM03: Training Data Poisoning",
+                                    ))
+                                
+                                # Check output KMS encryption
+                                output_cfg = detail.get("outputDataConfig", {})
+                                kms_key = output_cfg.get("kmsKeyId")
+                                if not kms_key:
+                                    collector.add_finding(Finding(
+                                        rule_id="AUTH-AWS-FT-002", severity=Severity.HIGH,
+                                        category="model", cloud_env="aws",
+                                        file_path=f"live:fine-tune:{job_name}", line_number=0,
+                                        code_snippet="outputDataConfig.kmsKeyId=null",
+                                        message=f"Fine-tuning job '{job_name}' output not encrypted with KMS",
+                                        recommendation="Specify kmsKeyId in outputDataConfig to encrypt fine-tuned model artifacts.",
+                                    ))
+                            except json.JSONDecodeError:
+                                pass
+            except json.JSONDecodeError:
+                pass
+        else:
+            if "permission" in error.lower():
+                collector.add_permission_issue("list_customization_jobs", "bedrock:ListModelCustomizationJobs", error)
+            collector.add_skipped_check("list_customization_jobs")
+
+    def _check_provisioned_throughput_cli(self, collector: Collector):
+        """Check rate limits and provisioned throughput."""
+        print("  [AUTH-AWS] Auditing provisioned model throughput (CLI)...")
+        
+        success, stdout, error = _safe_cli_call(
+            ["aws", "bedrock", "list-provisioned-model-throughputs", "--output", "json"]
+        )
+        
+        if not success:
+            if "permission" in error.lower():
+                collector.add_permission_issue("list_throughputs", "bedrock:ListProvisionedModelThroughputs", error)
+            collector.add_skipped_check("list_throughputs")
+            return
+        
+        collector.add_completed_check("list_throughputs")
+        
+        try:
+            data = json.loads(stdout)
+            throughputs = data.get("provisionedModelSummaries", [])
+            
+            if not throughputs:
+                collector.add_finding(Finding(
+                    rule_id="AUTH-AWS-RATE-001", severity=Severity.LOW,
+                    category="policy", cloud_env="aws",
+                    file_path="live:bedrock:provisioned-throughput", line_number=0,
+                    code_snippet="provisionedThroughputs=[]",
+                    message="No provisioned throughput configured — using on-demand which may have rate variability",
+                    recommendation="Consider provisioned throughput for production workloads to ensure consistent rate limits and cost predictability.",
+                ))
+            else:
+                print(f"  [AUTH-AWS] Found {len(throughputs)} provisioned throughput(s)")
+        except json.JSONDecodeError:
+            pass
+
+    def _check_knowledge_bases_cli(self, collector: Collector):
+        """Check knowledge bases security via CLI."""
+        print("  [AUTH-AWS] Auditing knowledge bases (CLI)...")
+        
+        success, stdout, error = _safe_cli_call(
+            ["aws", "bedrock-agent", "list-knowledge-bases", "--output", "json"]
+        )
+        
+        if not success:
+            if "permission" in error.lower():
+                collector.add_permission_issue("list_knowledge_bases", "bedrock-agent:ListKnowledgeBases", error)
+            collector.add_skipped_check("list_knowledge_bases")
+            return
+        
+        collector.add_completed_check("list_knowledge_bases")
+        
+        try:
+            data = json.loads(stdout)
+            kbs = data.get("knowledgeBaseSummaries", [])
+            
+            if kbs:
+                print(f"  [AUTH-AWS] Found {len(kbs)} knowledge base(s)")
+                
+                for kb in kbs:
+                    kb_id = kb.get("knowledgeBaseId", "")
+                    kb_name = kb.get("name", kb_id)
+                    
+                    # Get KB details
+                    detail_success, detail_stdout, _ = _safe_cli_call(
+                        ["aws", "bedrock-agent", "get-knowledge-base", "--knowledge-base-id", kb_id, "--output", "json"]
+                    )
+                    
+                    if detail_success:
+                        try:
+                            detail = json.loads(detail_stdout)
+                            kb_cfg = detail.get("knowledgeBase", {})
+                            
+                            # Check storage config
+                            storage = kb_cfg.get("storageConfiguration", {})
+                            storage_type = storage.get("type", "")
+                            
+                            # Check for encryption
+                            if storage_type == "OPENSEARCH_SERVERLESS":
+                                oss_cfg = storage.get("opensearchServerlessConfiguration", {})
+                                # OpenSearch Serverless should have encryption
+                                if not oss_cfg.get("collectionArn"):
+                                    collector.add_finding(Finding(
+                                        rule_id="AUTH-AWS-KB-003", severity=Severity.MEDIUM,
+                                        category="storage", cloud_env="aws",
+                                        file_path=f"live:kb:{kb_name}", line_number=0,
+                                        code_snippet=f"storageType={storage_type}",
+                                        message=f"Knowledge base '{kb_name}' storage configuration incomplete",
+                                        recommendation="Ensure OpenSearch Serverless collection is properly configured with encryption.",
+                                    ))
+                            
+                            # Check data sources
+                            self._check_kb_data_sources_cli(kb_id, kb_name, collector)
+                            
+                        except json.JSONDecodeError:
+                            pass
+        except json.JSONDecodeError:
+            pass
+
+    def _check_kb_data_sources_cli(self, kb_id: str, kb_name: str, collector: Collector):
+        """Check knowledge base data sources for security issues."""
+        success, stdout, error = _safe_cli_call(
+            ["aws", "bedrock-agent", "list-data-sources", "--knowledge-base-id", kb_id, "--output", "json"]
+        )
+        
+        if not success:
+            return
+        
+        try:
+            data = json.loads(stdout)
+            sources = data.get("dataSourceSummaries", [])
+            
+            for ds in sources:
+                ds_id = ds.get("dataSourceId", "")
+                ds_name = ds.get("name", ds_id)
+                status = ds.get("status", "")
+                
+                # Get data source details
+                detail_success, detail_stdout, _ = _safe_cli_call(
+                    ["aws", "bedrock-agent", "get-data-source", 
+                     "--knowledge-base-id", kb_id, 
+                     "--data-source-id", ds_id, 
+                     "--output", "json"]
+                )
+                
+                if detail_success:
+                    try:
+                        detail = json.loads(detail_stdout)
+                        ds_cfg = detail.get("dataSource", {}).get("dataSourceConfiguration", {})
+                        
+                        # Check S3 configuration
+                        s3_cfg = ds_cfg.get("s3Configuration", {})
+                        bucket_arn = s3_cfg.get("bucketArn", "")
+                        
+                        if bucket_arn:
+                            bucket_name = bucket_arn.split(":::")[-1] if ":::" in bucket_arn else bucket_arn
+                            
+                            # Check if bucket allows public access
+                            # (we can't directly check without S3 permissions, but flag if name suggests public)
+                            if any(x in bucket_name.lower() for x in ["public", "open", "shared"]):
+                                collector.add_finding(Finding(
+                                    rule_id="AUTH-AWS-KB-004", severity=Severity.HIGH,
+                                    category="storage", cloud_env="aws",
+                                    file_path=f"live:kb:{kb_name}:ds:{ds_name}", line_number=0,
+                                    code_snippet=f"s3Bucket={bucket_name}",
+                                    message=f"Knowledge base data source uses bucket with potentially public naming: {bucket_name}",
+                                    recommendation="Verify bucket has proper access controls. RAG data sources should never be publicly accessible.",
+                                    owasp_llm="LLM03: Training Data Poisoning",
+                                ))
+                    except json.JSONDecodeError:
+                        pass
+        except json.JSONDecodeError:
+            pass

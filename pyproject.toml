@@ -48,6 +48,10 @@ all = [
     "azure-mgmt-resource>=23.0.0",
     "google-cloud-aiplatform>=1.40.0",
 ]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
 
 [project.scripts]
 eeg = "eeg.cli:main"
@@ -61,4 +65,10 @@ Issues = "https://github.com/findthehead/eeg/issues"
 include = ["eeg*"]
 
 [tool.setuptools.package-data]
-eeg = ["rules/aws/*.yaml", "rules/azure/*.yaml", "rules/gcp/*.yaml"]
+eeg = ["rules/static/*.yaml", "rules/dynamic/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --tb=short"
