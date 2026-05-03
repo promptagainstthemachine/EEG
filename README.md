@@ -288,6 +288,118 @@ pytest tests/ --cov=eeg --cov-report=html
 
 ---
 
+## GitHub Action
+
+EEG is available as a reusable GitHub Action for CI/CD pipelines.
+
+### Quick Start
+
+```yaml
+name: AI Security Scan
+
+on: [push, pull_request]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: EEG AI Security Scan
+        uses: findthehead/EEG@v1
+        with:
+          env: aws
+          path: .
+```
+
+### Action Inputs
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `env` | Cloud environment (`aws`, `azure`, `gcp`) | **Yes** | - |
+| `path` | Path to scan | No | `.` |
+| `auth` | Enable authenticated live audit | No | `false` |
+| `vm` | Enable NVD CVE fetching | No | `true` |
+| `avoid` | Categories to skip (comma-separated) | No | - |
+| `thread` | Parallel scanning (`med`, `max`) | No | - |
+| `report` | Output format (`json`, `html`, `csv`) | No | `json` |
+| `output-file` | Custom output file path | No | auto |
+| `fail-on-severity` | Fail threshold (`critical`, `high`, `medium`, `low`, `none`) | No | `critical` |
+| `version` | EEG version to install | No | latest |
+| `extra-args` | Additional CLI arguments | No | - |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `findings-count` | Total number of findings |
+| `critical-count` | Number of CRITICAL findings |
+| `high-count` | Number of HIGH findings |
+| `report-file` | Path to generated report |
+| `exit-code` | EEG exit code (0=clean, 1=high, 2=critical) |
+
+### Usage Examples
+
+**Azure OpenAI with HTML Report:**
+```yaml
+- uses: findthehead/EEG@v1
+  with:
+    env: azure
+    path: ./ai-app
+    report: html
+```
+
+**GCP Vertex AI - Fail on HIGH:**
+```yaml
+- uses: findthehead/EEG@v1
+  with:
+    env: gcp
+    path: .
+    fail-on-severity: high
+```
+
+**Authenticated Live Audit (AWS):**
+```yaml
+- uses: findthehead/EEG@v1
+  with:
+    env: aws
+    path: .
+    auth: 'true'
+  env:
+    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    AWS_REGION: us-east-1
+```
+
+### Full Workflow Example
+
+```yaml
+name: AI Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  eeg-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: EEG AI Security Scan
+        uses: findthehead/EEG@v1
+        with:
+          env: aws
+          path: .
+          report: json
+          thread: max
+          fail-on-severity: high
+```
+
+---
+
 ## Contributing
 Pull requests welcome. For major changes, open an issue first.
 

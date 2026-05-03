@@ -1,0 +1,211 @@
+name: 'EEG - AI Security Scanner'
+description: 'Scan your AI workloads for security vulnerabilities across AWS Bedrock, Azure OpenAI, and GCP Vertex AI'
+author: 'findthehead'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  env:
+    description: 'Cloud environment to scan (aws, azure, gcp)'
+    required: true
+  path:
+    description: 'Path to repository or directory to scan'
+    required: false
+    default: '.'
+  auth:
+    description: 'Enable authenticated live audit (true/false)'
+    required: false
+    default: 'false'
+  vm:
+    description: 'Enable NVD CVE fetching (true/false)'
+    required: false
+    default: 'true'
+  avoid:
+    description: 'Comma-separated categories to skip (iam,storage,guardrail,model,network,iac,policy,prompt,secrets,logging)'
+    required: false
+    default: ''
+  thread:
+    description: 'Parallel scanning level (med, max)'
+    required: false
+    default: ''
+  report:
+    description: 'Report output format (json, html, csv)'
+    required: false
+    default: 'json'
+  output-file:
+    description: 'Custom output file path'
+    required: false
+    default: ''
+  fail-on-severity:
+    description: 'Fail the action if findings at this severity or higher are found (critical, high, medium, low, none)'
+    required: false
+    default: 'critical'
+  version:
+    description: 'EEG version to install (default: latest)'
+    required: false
+    default: ''
+  extra-args:
+    description: 'Additional arguments to pass to eeg command'
+    required: false
+    default: ''
+
+outputs:
+  findings-count:
+    description: 'Total number of findings'
+    value: ${{ steps.scan.outputs.findings-count }}
+  critical-count:
+    description: 'Number of CRITICAL findings'
+    value: ${{ steps.scan.outputs.critical-count }}
+  high-count:
+    description: 'Number of HIGH findings'
+    value: ${{ steps.scan.outputs.high-count }}
+  report-file:
+    description: 'Path to the generated report file'
+    value: ${{ steps.scan.outputs.report-file }}
+  exit-code:
+    description: 'Exit code from EEG (0=clean, 1=high, 2=critical, 3=error)'
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install EEG
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install eeg-security==${{ inputs.version }}
+        else
+          pip install eeg-security
+        fi
+        
+        # Install cloud-specific extras if auth is enabled
+        if [ "${{ inputs.auth }}" = "true" ]; then
+          case "${{ inputs.env }}" in
+            aws)   pip install eeg-security[aws] ;;
+            azure) pip install eeg-security[azure] ;;
+            gcp)   pip install eeg-security[gcp] ;;
+          esac
+        fi
+
+    - name: Run EEG Scan
+      id: scan
+      shell: bash
+      run: |
+        # Build command
+        CMD="eeg --env ${{ inputs.env }} --path ${{ inputs.path }}"
+        
+        # Add optional flags
+        if [ "${{ inputs.auth }}" = "true" ]; then
+          CMD="$CMD --auth true"
+        fi
+        
+        if [ "${{ inputs.vm }}" = "false" ]; then
+          CMD="$CMD --vm false"
+        fi
+        
+        if [ -n "${{ inputs.avoid }}" ]; then
+          CMD="$CMD --avoid ${{ inputs.avoid }}"
+        fi
+        
+        if [ -n "${{ inputs.thread }}" ]; then
+          CMD="$CMD --thread ${{ inputs.thread }}"
+        fi
+        
+        CMD="$CMD --report ${{ inputs.report }}"
+        
+        # Set output file
+        if [ -n "${{ inputs.output-file }}" ]; then
+          OUTPUT_FILE="${{ inputs.output-file }}"
+        else
+          OUTPUT_FILE="eeg-report.${{ inputs.report }}"
+        fi
+        CMD="$CMD --output-file $OUTPUT_FILE"
+        
+        # Add extra args
+        if [ -n "${{ inputs.extra-args }}" ]; then
+          CMD="$CMD ${{ inputs.extra-args }}"
+        fi
+        
+        echo "Running: $CMD"
+        
+        # Run scan and capture exit code
+        set +e
+        $CMD
+        EXIT_CODE=$?
+        set -e
+        
+        echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        echo "report-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
+        
+        # Parse findings count from JSON report
+        if [ "${{ inputs.report }}" = "json" ] && [ -f "$OUTPUT_FILE" ]; then
+          TOTAL=$(jq -r '.summary.total_findings // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+          CRITICAL=$(jq -r '.summary.by_severity.CRITICAL // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+          HIGH=$(jq -r '.summary.by_severity.HIGH // 0' "$OUTPUT_FILE" 2>/dev/null || echo "0")
+        else
+          TOTAL="0"
+          CRITICAL="0"
+          HIGH="0"
+        fi
+        
+        echo "findings-count=$TOTAL" >> $GITHUB_OUTPUT
+        echo "critical-count=$CRITICAL" >> $GITHUB_OUTPUT
+        echo "high-count=$HIGH" >> $GITHUB_OUTPUT
+        
+        echo "::notice::EEG found $TOTAL findings ($CRITICAL critical, $HIGH high)"
+
+    - name: Check Severity Threshold
+      shell: bash
+      run: |
+        EXIT_CODE=${{ steps.scan.outputs.exit-code }}
+        THRESHOLD="${{ inputs.fail-on-severity }}"
+        
+        case "$THRESHOLD" in
+          none)
+            echo "Severity threshold disabled, not failing"
+            exit 0
+            ;;
+          critical)
+            if [ "$EXIT_CODE" -eq 2 ]; then
+              echo "::error::CRITICAL findings detected"
+              exit 1
+            fi
+            ;;
+          high)
+            if [ "$EXIT_CODE" -ge 1 ]; then
+              echo "::error::HIGH or CRITICAL findings detected"
+              exit 1
+            fi
+            ;;
+          medium|low)
+            if [ "$EXIT_CODE" -ge 1 ]; then
+              echo "::error::Findings at $THRESHOLD severity or higher detected"
+              exit 1
+            fi
+            # Also check for medium/low in JSON
+            if [ "${{ inputs.report }}" = "json" ] && [ -f "${{ steps.scan.outputs.report-file }}" ]; then
+              TOTAL=${{ steps.scan.outputs.findings-count }}
+              if [ "$TOTAL" -gt 0 ]; then
+                echo "::error::$TOTAL findings detected"
+                exit 1
+              fi
+            fi
+            ;;
+        esac
+        
+        echo "Scan completed within acceptable thresholds"
+
+    - name: Upload Report Artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: eeg-security-report
+        path: ${{ steps.scan.outputs.report-file }}
+        if-no-files-found: ignore
