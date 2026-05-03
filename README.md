@@ -1,4 +1,5 @@
-# `EEG (Extensive Exposure Guard)`<br> MultiCloud AI Security and Vulnerability Management Framework
+# `EEG - Extensive Exposure Guard`<br> 
+### World's First Dynamic and Static Agentic Application Security Testing Tool across AWS Bedrock, Azure Foundry and GCP Vertex AI 
 ![](asset/logo.png)
 
 [![PyPI](https://img.shields.io/pypi/v/eeg-security)](https://pypi.org/project/eeg-security/)
