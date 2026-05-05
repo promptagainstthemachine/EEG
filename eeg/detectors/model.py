@@ -1,5 +1,5 @@
 """EEG - Model Security Detector (endpoints, weights, inference)"""
-from EEG.eeg.detectors.base import BaseDetector
+from eeg.detectors.base import BaseDetector
 
 
 class ModelDetector(BaseDetector):

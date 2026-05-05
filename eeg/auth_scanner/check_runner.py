@@ -4,8 +4,8 @@ Executes checks defined in YAML configs for auth scanners.
 """
 
 from typing import Dict, Any, Optional, Callable, Tuple
-from EEG.eeg.collector import Collector, Finding, Severity
-from EEG.eeg.config import ConfigLoader
+from eeg.collector import Collector, Finding, Severity
+from eeg.config import ConfigLoader
 
 
 class CheckRunner:

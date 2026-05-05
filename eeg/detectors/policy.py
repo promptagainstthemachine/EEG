@@ -1,5 +1,5 @@
 """EEG - Policy Misconfiguration Detector"""
-from EEG.eeg.detectors.base import BaseDetector
+from eeg.detectors.base import BaseDetector
 
 
 class PolicyDetector(BaseDetector):

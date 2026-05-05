@@ -4,17 +4,17 @@ Loads category-specific detectors based on cloud environment and avoided categor
 """
 
 from typing import List, Set
-from EEG.eeg.detectors.base import BaseDetector
-from EEG.eeg.detectors.iam import IAMDetector
-from EEG.eeg.detectors.storage import StorageDetector
-from EEG.eeg.detectors.guardrail import GuardrailDetector
-from EEG.eeg.detectors.model import ModelDetector
-from EEG.eeg.detectors.network import NetworkDetector
-from EEG.eeg.detectors.iac import IaCDetector
-from EEG.eeg.detectors.policy import PolicyDetector
-from EEG.eeg.detectors.prompt import PromptDetector
-from EEG.eeg.detectors.secrets import SecretsDetector
-from EEG.eeg.detectors.logging_monitor import LoggingDetector
+from eeg.detectors.base import BaseDetector
+from eeg.detectors.iam import IAMDetector
+from eeg.detectors.storage import StorageDetector
+from eeg.detectors.guardrail import GuardrailDetector
+from eeg.detectors.model import ModelDetector
+from eeg.detectors.network import NetworkDetector
+from eeg.detectors.iac import IaCDetector
+from eeg.detectors.policy import PolicyDetector
+from eeg.detectors.prompt import PromptDetector
+from eeg.detectors.secrets import SecretsDetector
+from eeg.detectors.logging_monitor import LoggingDetector
 
 
 ALL_DETECTORS = [

@@ -8,7 +8,7 @@ import time
 import requests
 from typing import List, Dict, Optional
 
-from EEG.eeg.collector import Finding, Severity
+from eeg.collector import Finding, Severity
 
 NVD_API_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 REQUEST_DELAY = 6  # NVD rate limit: 5 requests per 30 seconds without API key
@@ -22,7 +22,7 @@ CVSS_TO_SEVERITY = {
 }
 
 # Import the registry to resolve keywords
-from EEG.eeg.vuln_manager.dependency_parser import AI_PACKAGE_REGISTRY
+from eeg.vuln_manager.dependency_parser import AI_PACKAGE_REGISTRY
 
 
 class CVEFetcher:

@@ -11,7 +11,7 @@ import re
 import yaml
 from typing import List, Dict, Optional, Set
 
-from EEG.eeg.collector import Collector, Finding, Severity
+from eeg.collector import Collector, Finding, Severity
 
 # Rules are now in rules/static/ folder
 RULES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rules", "static")

@@ -5,7 +5,7 @@ Produces a CSV report for spreadsheet integration and analysis.
 
 import csv
 import io
-from EEG.eeg.collector import Collector
+from eeg.collector import Collector
 
 
 class CSVReportGenerator:

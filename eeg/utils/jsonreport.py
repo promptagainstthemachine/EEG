@@ -4,7 +4,7 @@ Produces machine-readable JSON for CI/CD integration.
 """
 
 import json
-from EEG.eeg.collector import Collector
+from eeg.collector import Collector
 
 
 class JSONReportGenerator:

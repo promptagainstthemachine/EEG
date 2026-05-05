@@ -23,18 +23,18 @@ import os
 import time
 import datetime
 
-from EEG.eeg.collector import Collector, Severity
-from EEG.eeg.utils.repocrawler import RepoCrawler
-from EEG.eeg.utils.threadpoolexecutor import ThreadManager
-from EEG.eeg.utils.htmlreport import HTMLReportGenerator
-from EEG.eeg.utils.jsonreport import JSONReportGenerator
-from EEG.eeg.utils.csvreport import CSVReportGenerator
-from EEG.eeg.utils.auth import CloudAuthenticator
-from EEG.eeg.utils.cloud_console import CloudConsoleDetector, LocalConsoleAuthenticator
-from EEG.eeg.detectors import load_detectors
-from EEG.eeg.auth_scanner import get_auth_scanner
-from EEG.eeg.vuln_manager.cve_fetcher import CVEFetcher
-from EEG.eeg.vuln_manager.dependency_parser import DependencyParser
+from eeg.collector import Collector, Severity
+from eeg.utils.repocrawler import RepoCrawler
+from eeg.utils.threadpoolexecutor import ThreadManager
+from eeg.utils.htmlreport import HTMLReportGenerator
+from eeg.utils.jsonreport import JSONReportGenerator
+from eeg.utils.csvreport import CSVReportGenerator
+from eeg.utils.auth import CloudAuthenticator
+from eeg.utils.cloud_console import CloudConsoleDetector, LocalConsoleAuthenticator
+from eeg.detectors import load_detectors
+from eeg.auth_scanner import get_auth_scanner
+from eeg.vuln_manager.cve_fetcher import CVEFetcher
+from eeg.vuln_manager.dependency_parser import DependencyParser
 
 
 BANNER = """

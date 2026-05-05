@@ -4,9 +4,9 @@ Authenticated live-audit engine.
 Extends across AWS, Azure, and GCP cloud AI services.
 """
 
-from EEG.eeg.auth_scanner.aws_scanner import AWSAuthScanner
-from EEG.eeg.auth_scanner.azure_scanner import AzureAuthScanner
-from EEG.eeg.auth_scanner.gcp_scanner import GCPAuthScanner
+from eeg.auth_scanner.aws_scanner import AWSAuthScanner
+from eeg.auth_scanner.azure_scanner import AzureAuthScanner
+from eeg.auth_scanner.gcp_scanner import GCPAuthScanner
 
 
 def get_auth_scanner(cloud_env: str, auth_context: dict):

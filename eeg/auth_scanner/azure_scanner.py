@@ -10,8 +10,8 @@ import os
 import subprocess
 import json
 from typing import Optional, List, Dict, Tuple
-from EEG.eeg.collector import Collector, Finding, Severity
-from EEG.eeg.auth_scanner.check_runner import CheckRunner, get_threshold
+from eeg.collector import Collector, Finding, Severity
+from eeg.auth_scanner.check_runner import CheckRunner, get_threshold
 
 try:
     from azure.identity import DefaultAzureCredential, ManagedIdentityCredential

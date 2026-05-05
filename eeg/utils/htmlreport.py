@@ -5,7 +5,7 @@ Produces a self-contained HTML security report.
 
 import html
 import datetime
-from EEG.eeg.collector import Collector, Finding
+from eeg.collector import Collector, Finding
 
 
 SEVERITY_COLORS = {
