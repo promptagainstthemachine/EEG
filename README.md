@@ -1,6 +1,6 @@
 # `EEG - Extensive Exposure Guard`
 
-### AI-first security for agents — static scans, runtime gateway, and OSS console
+### World's first Dynamic and Static Application Security Testing Tool for AI Agents.
 
 ![](asset/logo.png)
 
