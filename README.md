@@ -1,6 +1,6 @@
 # `EEG - Extensive Exposure Guard`
 
-### World's first Dynamic and Static Application Security Testing Tool for AI Agents.
+### Full fledged AI Security gateway and static analysis tool
 
 ![](asset/logo.png)
 
