@@ -1,0 +1,18 @@
+{
+  "profile": "code",
+  "min_findings": 3,
+  "required_rule_ids": [
+    "EEG-AEGIS-SC004",
+    "AGENT-001",
+    "EEG-GW-OSS-001"
+  ],
+  "required_rule_id_prefixes": [
+    "EEG-SEM-",
+    "EEG-AEGIS-"
+  ],
+  "must_include_rule_substrings": [
+    "exec",
+    "credential",
+    "api"
+  ]
+}

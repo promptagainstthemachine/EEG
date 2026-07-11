@@ -1,0 +1,52 @@
+# =============================================================
+# eeg.prompt_surface.pii_exposure.pg-pii-medical-id
+# =============================================================
+# EEG bundled rule
+# Apache-2.0 — EEG
+# Source: EEG bundled rules
+# Severity: high  |  ASAMM: AI-06 (+AO-01)
+# =============================================================
+external_source:
+  tool: eeg_rule_pack
+  original_id: PG_PII_MEDICAL_ID
+  original_title: 'Possible US Medicare Beneficiary Identifier (MBI) detected. Medical identifiers '
+  source_version: 1.0.0
+  import_date: '2026-04-21'
+  upstream: ""
+  license: Apache-2.0 — EEG
+  notes: EEG prompt-surface rule pack
+eeg_rule_uid: eeg.prompt_surface.pii_exposure.pg-pii-medical-id
+title: 'Possible US Medicare Beneficiary Identifier (MBI) detected. Medical identifiers '
+description: 'Possible US Medicare Beneficiary Identifier (MBI) detected. Medical identifiers are protected health information
+  (PHI) under HIPAA and should never appear in skill packages. Source: EEG security catalog'
+severity_default: high
+category: pii_exposure
+audit_surface:
+- instruction_file
+- skill_md
+asamm:
+  primary: AI-06
+  secondary:
+  - AO-01
+  mapping_confidence: category-default
+  notes: Category-level default at import. Review per rule.
+file_types:
+- markdown
+- python
+- bash
+- javascript
+- typescript
+- text
+- json
+- yaml
+patterns:
+- (?<![A-Za-z0-9])[1-9][AC-HJKMNP-RT-Yac-hjkmnp-rt-y][AC-HJKMNP-RT-Yac-hjkmnp-rt-y0-9][0-9][AC-HJKMNP-RT-Yac-hjkmnp-rt-y][AC-HJKMNP-RT-Yac-hjkmnp-rt-y0-9][0-9][AC-HJKMNP-RT-Yac-hjkmnp-rt-y]{2}[0-9]{2}(?![A-Za-z0-9])
+exclude_patterns:
+- (?i)example
+- (?i)test
+- (?i)sample
+- (?i)format
+remediation: 'Remove all medical identifiers. If the skill processes health data, ensure HIPAA-compliant data handling with
+  proper de-identification.
+
+  '

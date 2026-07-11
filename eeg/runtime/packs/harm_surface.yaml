@@ -1,0 +1,38 @@
+# EEG sigil pack — toxic / harmful intent
+rules:
+  - id: EEG-SIGIL-TOX-001
+    category: toxicity
+    severity: high
+    score: 0.86
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)\b(kill\s+yourself|kys)\b'
+      - type: regex
+        value: '(?i)\b(racial\s+slur|genocide\s+instructions)\b'
+
+  - id: EEG-SIGIL-TOX-003
+    category: weapons_harm
+    severity: critical
+    score: 0.93
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)how\s+to\s+(make|build|create|assemble|craft)\s+(an?\s+)?(bomb|explosive|ied|pipe[\s-]?bomb|molotov)'
+      - type: regex
+        value: '(?i)\b(make|build|craft|assemble)\s+(an?\s+)?(bomb|explosive|ied|pipe[\s-]?bomb)\b'
+      - type: regex
+        value: '(?i)\b(instructions?|recipe|guide|tutorial)\s+(for|to)\s+(making|building|assembling)\s+(an?\s+)?(bomb|explosive)'
+      - type: regex
+        value: '(?i)\b(detonate|wire\s+up)\s+(an?\s+)?(bomb|explosive|ied)\b'
+
+  - id: EEG-SIGIL-TOX-002
+    category: malicious_ops
+    severity: high
+    score: 0.8
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)\b(ransomware|keylogger|rootkit)\b.{0,40}\b(build|deploy|install)\b'
+      - type: regex
+        value: '(?i)\brm\s+-rf\s+/\b'

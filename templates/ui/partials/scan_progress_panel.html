@@ -1,0 +1,7 @@
+<div class="panel scan-progress" style="margin-top:1rem;">
+    {% if busy_message %}
+    <p style="margin:0 0 0.75rem;color:var(--accent-warning);">{{ busy_message }}</p>
+    {% endif %}
+    <p style="margin:0;color:var(--text-secondary);">Running security scan across active projects…</p>
+    <div class="scan-progress-bar"><div class="scan-progress-fill"></div></div>
+</div>

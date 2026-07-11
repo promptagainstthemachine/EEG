@@ -3,7 +3,7 @@ EEG - GCP Authenticated Scanner
 Live audit of Vertex AI endpoints, models, safety settings, and IAM.
 Supports both SDK and CLI modes for cloud shell compatibility.
 Auto-detects permissions and gracefully handles restricted access.
-Config-driven checks loaded from eeg/config/gcp_live_checks.yaml
+Config-driven checks loaded from eeg/rules/dynamic/gcp_dynamic.yaml
 """
 
 import os
@@ -47,7 +47,7 @@ def _safe_cli_call(cmd: List[str], timeout: int = 60) -> Tuple[bool, str, str]:
 class GCPAuthScanner:
     """
     Live audit of GCP Vertex AI resources using authenticated API calls.
-    Config-driven checks from gcp_live_checks.yaml.
+    Config-driven checks from rules/dynamic/gcp_dynamic.yaml via CheckRunner.
     """
 
     def __init__(self, auth_context: dict):
@@ -263,44 +263,38 @@ class GCPAuthScanner:
         print(f"  [AUTH-GCP] Found {len(endpoints)} endpoint(s)")
 
         for ep in endpoints:
-            try:
-                ep_name = ep.display_name or ep.resource_name
+            ep_name = ep.display_name or ep.resource_name
 
-                # Check for traffic split (model serving)
-                traffic = ep.traffic_split or {}
-                if not traffic:
-                    continue
-
-                self._has_default_guardrails = True  # Mark as having endpoints
-
-                # Check encryption
-                enc_spec = getattr(ep, "encryption_spec", None)
-                if not enc_spec or not getattr(enc_spec, "kms_key_name", None):
-                    collector.add_finding(Finding(
-                        rule_id="AUTH-GCP-MODEL-001", severity=Severity.HIGH,
-                        category="model", cloud_env="gcp",
-                        file_path=f"live:endpoint:{ep_name}", line_number=0,
-                        code_snippet="encryption_spec.kms_key_name=null",
-                        message=f"Vertex AI endpoint '{ep_name}' not encrypted with CMEK",
-                        recommendation="Configure customer-managed encryption key (CMEK) on Vertex AI endpoints for data at rest.",
-                    ))
-
-                # Check network (private endpoint)
-                network = getattr(ep, "network", None)
-                if not network:
-                    collector.add_finding(Finding(
-                        rule_id="AUTH-GCP-NET-001", severity=Severity.HIGH,
-                        category="network", cloud_env="gcp",
-                        file_path=f"live:endpoint:{ep_name}", line_number=0,
-                        code_snippet="network=null (public endpoint)",
-                        message=f"Vertex AI endpoint '{ep_name}' is publicly accessible (no VPC peering)",
-                        recommendation="Deploy endpoints within a VPC using private endpoints (network parameter).",
-                    ))
-            except Exception as e:
-                ep_name = getattr(ep, 'display_name', None) or getattr(ep, 'resource_name', 'unknown')
-                print(f"  [AUTH-GCP] Error auditing endpoint {ep_name}: {str(e)[:100]} - continuing to next endpoint")
-                collector.add_permission_issue(f"audit_endpoint_{ep_name}", ep_name, str(e)[:150])
+            # Check for traffic split (model serving)
+            traffic = ep.traffic_split or {}
+            if not traffic:
                 continue
+
+            self._has_default_guardrails = True  # Mark as having endpoints
+
+            # Check encryption
+            enc_spec = getattr(ep, "encryption_spec", None)
+            if not enc_spec or not getattr(enc_spec, "kms_key_name", None):
+                collector.add_finding(Finding(
+                    rule_id="AUTH-GCP-MODEL-001", severity=Severity.HIGH,
+                    category="model", cloud_env="gcp",
+                    file_path=f"live:endpoint:{ep_name}", line_number=0,
+                    code_snippet="encryption_spec.kms_key_name=null",
+                    message=f"Vertex AI endpoint '{ep_name}' not encrypted with CMEK",
+                    recommendation="Configure customer-managed encryption key (CMEK) on Vertex AI endpoints for data at rest.",
+                ))
+
+            # Check network (private endpoint)
+            network = getattr(ep, "network", None)
+            if not network:
+                collector.add_finding(Finding(
+                    rule_id="AUTH-GCP-NET-001", severity=Severity.HIGH,
+                    category="network", cloud_env="gcp",
+                    file_path=f"live:endpoint:{ep_name}", line_number=0,
+                    code_snippet="network=null (public endpoint)",
+                    message=f"Vertex AI endpoint '{ep_name}' is publicly accessible (no VPC peering)",
+                    recommendation="Deploy endpoints within a VPC using private endpoints (network parameter).",
+                ))
 
     def _check_models(self, collector: Collector):
         """Audit Vertex AI model registry (SDK mode)."""
@@ -315,34 +309,28 @@ class GCPAuthScanner:
         print(f"  [AUTH-GCP] Found {len(models)} model(s)")
 
         for model in models:
-            try:
-                model_name = model.display_name or model.resource_name
+            model_name = model.display_name or model.resource_name
 
-                # Check encryption
-                enc_spec = getattr(model, "encryption_spec", None)
-                if not enc_spec or not getattr(enc_spec, "kms_key_name", None):
-                    collector.add_finding(Finding(
-                        rule_id="AUTH-GCP-MODEL-002", severity=Severity.MEDIUM,
-                        category="model", cloud_env="gcp",
-                        file_path=f"live:model:{model_name}", line_number=0,
-                        code_snippet="",
-                        message=f"Model '{model_name}' artifacts not encrypted with CMEK",
-                        recommendation="Upload models with encryption_spec pointing to a Cloud KMS key.",
-                    ))
+            # Check encryption
+            enc_spec = getattr(model, "encryption_spec", None)
+            if not enc_spec or not getattr(enc_spec, "kms_key_name", None):
+                collector.add_finding(Finding(
+                    rule_id="AUTH-GCP-MODEL-002", severity=Severity.MEDIUM,
+                    category="model", cloud_env="gcp",
+                    file_path=f"live:model:{model_name}", line_number=0,
+                    code_snippet="",
+                    message=f"Model '{model_name}' artifacts not encrypted with CMEK",
+                    recommendation="Upload models with encryption_spec pointing to a Cloud KMS key.",
+                ))
 
-                # Check artifact URI for public GCS
-                artifact_uri = getattr(model, "artifact_uri", "") or ""
-                if artifact_uri and not artifact_uri.startswith("gs://"):
-                    collector.add_finding(Finding(
-                        rule_id="AUTH-GCP-MODEL-003", severity=Severity.HIGH,
-                        category="model", cloud_env="gcp",
-                        file_path=f"live:model:{model_name}", line_number=0,
-                        code_snippet=f"artifact_uri={artifact_uri[:100]}",
-                        message=f"Model '{model_name}' artifact URI points to non-GCS location — potential exfiltration risk",
-                        recommendation="Store model artifacts exclusively in private GCS buckets with uniform access control.",
-                    ))
-            except Exception as e:
-                model_name = getattr(model, 'display_name', None) or getattr(model, 'resource_name', 'unknown')
-                print(f"  [AUTH-GCP] Error auditing model {model_name}: {str(e)[:100]} - continuing to next model")
-                collector.add_permission_issue(f"audit_model_{model_name}", model_name, str(e)[:150])
-                continue
+            # Check artifact URI for public GCS
+            artifact_uri = getattr(model, "artifact_uri", "") or ""
+            if artifact_uri and not artifact_uri.startswith("gs://"):
+                collector.add_finding(Finding(
+                    rule_id="AUTH-GCP-MODEL-003", severity=Severity.HIGH,
+                    category="model", cloud_env="gcp",
+                    file_path=f"live:model:{model_name}", line_number=0,
+                    code_snippet=f"artifact_uri={artifact_uri[:100]}",
+                    message=f"Model '{model_name}' artifact URI points to non-GCS location — potential exfiltration risk",
+                    recommendation="Store model artifacts exclusively in private GCS buckets with uniform access control.",
+                ))

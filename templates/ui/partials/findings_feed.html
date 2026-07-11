@@ -1,0 +1,32 @@
+{% if findings %}
+{% if layout == 'horizontal' %}
+<div class="findings-h-scroll-inner" style="display:flex;flex-direction:row;gap:0.75rem;width:max-content;min-height:100px;">
+    {% for finding in findings %}
+    <article class="finding-h-card" style="flex:0 0 auto;width:min(280px,85vw);background:var(--bg-tertiary);border:1px solid var(--border-default);border-radius:8px;padding:0.75rem 0.9rem;display:flex;flex-direction:column;gap:0.35rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;justify-content:space-between;">
+            <span class="severity-badge severity-{{ finding.severity }}">{{ finding.severity }}</span>
+            <span class="muted" style="font-size:0.7rem;">{{ finding.timestamp|timesince }} ago</span>
+        </div>
+        <div style="font-size:0.8125rem;font-weight:500;line-height:1.35;">{{ finding.title|truncatechars:90 }}</div>
+        <div class="muted" style="font-size:0.7rem;word-break:break-all;">{{ finding.file_path|truncatechars:42 }}{% if finding.source == 'runtime' %} · live{% endif %}</div>
+        <code style="font-size:0.65rem;color:var(--text-muted);">{{ finding.rule_id|truncatechars:36 }}</code>
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<div style="display: flex; flex-direction: column; gap: 0.5rem;">
+    {% for finding in findings %}
+    <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border-default);">
+        <span class="severity-badge severity-{{ finding.severity }}">{{ finding.severity|slice:":1"|upper }}</span>
+        <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ finding.title }}</div>
+            <div class="muted" style="font-size: 0.75rem;">{{ finding.file_path }}{% if finding.source == 'runtime' %} · live{% endif %}</div>
+        </div>
+        <div class="muted" style="font-size: 0.75rem; white-space: nowrap;">{{ finding.timestamp|timesince }} ago</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% else %}
+<p class="muted">No recent findings.</p>
+{% endif %}

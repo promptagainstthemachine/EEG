@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% load tz %}
+{% block title %}Profile & Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Profile & Settings</h1>
+</div>
+
+<style>
+    .tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid var(--border-default);
+        padding-bottom: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .tab-btn {
+        padding: 0.5rem 1rem;
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        border-radius: 6px 6px 0 0;
+        font-size: 0.875rem;
+    }
+    .tab-btn:hover {
+        color: var(--text-primary);
+        background: var(--bg-tertiary);
+    }
+    .tab-btn.active {
+        color: var(--accent-primary);
+        border-bottom: 2px solid var(--accent-primary);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 0;
+        border-bottom: 1px solid var(--border-default);
+    }
+    .setting-info h4 { margin-bottom: 0.25rem; }
+    .setting-info p { color: var(--text-secondary); font-size: 0.875rem; }
+    .activity-log-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .activity-log-table-wrap {
+        overflow-x: auto;
+        margin-top: 1rem;
+        border: 1px solid var(--border-default);
+        border-radius: 8px;
+    }
+    .activity-log-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8125rem;
+    }
+    .activity-log-table th,
+    .activity-log-table td {
+        padding: 0.65rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border-default);
+        vertical-align: top;
+    }
+    .activity-log-table th {
+        color: var(--text-secondary);
+        font-weight: 500;
+        background: var(--bg-primary);
+    }
+    .activity-log-table tr:last-child td { border-bottom: none; }
+    .activity-log-detail { color: var(--text-secondary); word-break: break-word; }
+</style>
+
+<div class="tabs">
+    <button type="button" class="tab-btn" data-tab="profile" onclick="showTab('profile')">Profile</button>
+    <button type="button" class="tab-btn" data-tab="organization" onclick="showTab('organization')">Organization</button>
+    <button type="button" class="tab-btn" data-tab="security" onclick="showTab('security')">Security Settings</button>
+    <button type="button" class="tab-btn" data-tab="api" onclick="showTab('api')">API Keys</button>
+    <button type="button" class="tab-btn" data-tab="logs" onclick="showTab('logs')">Logs</button>
+</div>
+
+<div id="profile-tab" class="tab-content">
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Profile Information</h2>
+        </div>
+        <div style="display: grid; gap: 1rem;">
+            <div>
+                <label class="muted">Username</label>
+                <div style="font-size: 1rem;">{{ user.username }}</div>
+            </div>
+            <div>
+                <label class="muted">Email</label>
+                <div style="font-size: 1rem;">{{ user.email|default:"Not set" }}</div>
+            </div>
+            <div>
+                <label class="muted">Member since</label>
+                <div style="font-size: 1rem;">{{ user.date_joined|date:"F j, Y" }}</div>
+            </div>
+        </div>
+        <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="{% url 'accounts:profile_update' %}" class="btn btn-secondary">Edit Profile</a>
+            <a href="{% url 'accounts:password_change' %}" class="btn btn-secondary">Change Password</a>
+            <a href="{% url 'accounts:delete_account' %}" class="btn btn-danger">Delete account</a>
+        </div>
+    </div>
+</div>
+
+<div id="organization-tab" class="tab-content">
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Organization Settings</h2>
+        </div>
+        {% if eeg_organization %}
+        <form action="{% url 'accounts:organization_settings' %}" method="post">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="org-name">Organization Name</label>
+                <input type="text" id="org-name" name="name" class="eeg-input" value="{{ eeg_organization.name }}">
+            </div>
+            <div style="display: grid; gap: 0.5rem; margin-top: 1rem;">
+                <div>
+                    <label class="muted">Slug</label>
+                    <div style="font-size: 1rem;">{{ eeg_organization.slug }}</div>
+                </div>
+                <div>
+                    <label class="muted">Projects</label>
+                    <div style="font-size: 1rem;">{{ eeg_organization.project_count }}</div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 1.5rem;">Save Changes</button>
+        </form>
+        {% else %}
+        <p>You don't have an organization yet.</p>
+        <a href="{% url 'accounts:create_organization' %}" class="btn btn-primary" style="margin-top: 1rem;">Create Organization</a>
+        {% endif %}
+    </div>
+</div>
+
+<div id="security-tab" class="tab-content">
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Security Controls</h2>
+        </div>
+        {% if eeg_organization %}
+        <form action="{% url 'accounts:organization_settings' %}" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="name" value="{{ eeg_organization.name }}">
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h4>Auto Red-Team</h4>
+                    <p>Enable automatic adversarial probes against your AI endpoints</p>
+                </div>
+                <input type="checkbox" name="auto_redteam_enabled" class="toggle-switch" {% if eeg_organization.auto_redteam_enabled %}checked{% endif %}>
+            </div>
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h4>Model Scanning</h4>
+                    <p>Scan model artifacts for serialization vulnerabilities</p>
+                </div>
+                <input type="checkbox" name="model_scanning_enabled" class="toggle-switch" {% if eeg_organization.model_scanning_enabled %}checked{% endif %}>
+            </div>
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h4>Real-time Telemetry</h4>
+                    <p>Collect real-time AI trace telemetry</p>
+                </div>
+                <input type="checkbox" name="realtime_telemetry_enabled" class="toggle-switch" {% if eeg_organization.realtime_telemetry_enabled %}checked{% endif %}>
+            </div>
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h4>Real-time Monitoring</h4>
+                    <p>Enable real-time security monitoring and alerts</p>
+                </div>
+                <input type="checkbox" name="realtime_monitoring_enabled" class="toggle-switch" {% if eeg_organization.realtime_monitoring_enabled %}checked{% endif %}>
+            </div>
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h4>Policy Enforcement</h4>
+                    <p>Automatically block requests that violate security policies</p>
+                </div>
+                <input type="checkbox" name="policy_enforcement_enabled" class="toggle-switch" {% if eeg_organization.policy_enforcement_enabled %}checked{% endif %}>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 1.5rem;">Save Security Settings</button>
+        </form>
+        {% else %}
+        <p class="muted">Create an organization to configure security settings.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div id="api-tab" class="tab-content">
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">API Keys</h2>
+        </div>
+        {% if eeg_organization %}
+        {% include "accounts/partials/api_keys_root.html" %}
+        {% else %}
+        <p class="muted">Create an organization before adding API keys.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div id="logs-tab" class="tab-content">
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Activity log</h2>
+            <div class="activity-log-toolbar">
+                <a href="{% url 'accounts:activity_logs_download' %}" class="btn btn-secondary" style="font-size: 0.8125rem;">Download JSON</a>
+                <form action="{% url 'accounts:activity_logs_clear' %}" method="post" style="margin:0;" onsubmit="return confirm('Delete all log entries for your account? This cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger" style="font-size: 0.8125rem;">Delete all logs</button>
+                </form>
+            </div>
+        </div>
+        {% if activity_logs %}
+        <div class="activity-log-table-wrap">
+            <table class="activity-log-table">
+                <thead>
+                    <tr>
+                        <th>When (UTC)</th>
+                        <th>Event</th>
+                        <th>Details</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in activity_logs %}
+                    <tr>
+                        <td>{{ log.created_at|timezone:"UTC"|date:"Y-m-d H:i:s" }}</td>
+                        <td>{{ log.get_event_type_display }}</td>
+                        <td class="activity-log-detail">
+                            {% if log.event_type == "project_deleted" %}
+                                Removed project “{{ log.metadata.project_name|default:"—" }}” (id {{ log.metadata.project_id }}) — deleted by {{ log.metadata.deleted_by_username|default:log.actor_username }}
+                            {% elif log.event_type == "project_created" %}
+                                Added “{{ log.metadata.project_name|default:"—" }}” — {{ log.metadata.projects_in_org }} project{{ log.metadata.projects_in_org|pluralize }} in org
+                            {% elif log.event_type == "project_create_blocked" %}
+                                Add blocked: {{ log.metadata.current_count }}/{{ log.metadata.max_projects }} projects (limit reached)
+                            {% elif log.event_type == "organization_created" %}
+                                {{ log.metadata.organization_name|default:"Organization" }} ({{ log.metadata.organization_slug|default:"—" }})
+                            {% elif log.event_type == "user_registered" %}
+                                Account created with org {{ log.metadata.organization_name|default:"—" }}
+                            {% elif log.event_type == "user_login" or log.event_type == "user_logout" %}
+                                {{ log.actor_username|default:user.username }}
+                            {% elif log.event_type == "api_key_created" %}
+                                Label “{{ log.metadata.label|default:"—" }}”, key id {{ log.metadata.api_key_id|default:"—" }}, prefix {{ log.metadata.prefix|default:"—" }}…
+                            {% elif log.event_type == "api_key_revoked" %}
+                                Label “{{ log.metadata.label|default:"—" }}”, key id {{ log.metadata.api_key_id|default:"—" }}, prefix {{ log.metadata.prefix|default:"—" }}…
+                            {% else %}
+                                {% if log.metadata %}{{ log.metadata }}{% else %}—{% endif %}
+                            {% endif %}
+                        </td>
+                        <td class="muted">{{ log.ip_address|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="muted" style="margin-top: 1rem;">No activity recorded yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(function (tab) {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-tab') === tabName) {
+            btn.classList.add('active');
+        }
+    });
+    var el = document.getElementById(tabName + '-tab');
+    if (el) el.classList.add('active');
+    try { history.replaceState(null, '', '?tab=' + tabName); } catch (e) {}
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var initial = '{{ initial_tab|default:"profile"|escapejs }}';
+    if (['profile', 'organization', 'security', 'api', 'logs'].indexOf(initial) >= 0) {
+        showTab(initial);
+    } else {
+        showTab('profile');
+    }
+});
+</script>
+{% endblock %}

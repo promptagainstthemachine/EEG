@@ -28,14 +28,25 @@ class BaseDetector:
         self.rules = self._load_rules()
 
     def _load_rules(self) -> List[Dict]:
-        # Load from rules/static/{cloud}_static.yaml
+        """Merge cloud static pack with shared AI-surface rules (EEG-native YAML only)."""
+        merged: List[Dict] = []
         rule_file = os.path.join(RULES_DIR, f"{self.cloud_env}_static.yaml")
-        if not os.path.isfile(rule_file):
-            return []
-        with open(rule_file, "r") as f:
-            data = yaml.safe_load(f)
-        all_rules = data.get("rules", [])
-        return [r for r in all_rules if r.get("category") == self.category]
+        if os.path.isfile(rule_file):
+            with open(rule_file, "r") as f:
+                data = yaml.safe_load(f) or {}
+            merged.extend(data.get("rules", []))
+
+        pack_path = os.path.join(RULES_DIR, "ai_surface_pack.yaml")
+        if os.path.isfile(pack_path):
+            with open(pack_path, "r") as f:
+                pack = yaml.safe_load(f) or {}
+            for r in pack.get("rules", []):
+                clouds = r.get("cloud_envs")
+                if isinstance(clouds, list) and clouds and self.cloud_env not in clouds:
+                    continue
+                merged.append(r)
+
+        return [r for r in merged if r.get("category") == self.category]
 
     def scan(self, files: List[Dict], collector: Collector):
         """Run all loaded rules against the provided files."""
@@ -75,8 +86,18 @@ class BaseDetector:
                 continue
 
             for line_num, line in enumerate(content.splitlines(), start=1):
-                if compiled.search(line):
-                    collector.add_finding(Finding(
+                match = compiled.search(line)
+                if not match:
+                    continue
+                # Skip matches inside strings/comments (e.g. docstrings mentioning eval/exec)
+                line_start = sum(len(l) + 1 for l in content.splitlines()[: line_num - 1])
+                from eeg.analysis.code_context import match_span_is_non_executable
+
+                if match_span_is_non_executable(
+                    content, line_start + match.start(), line_start + match.end()
+                ):
+                    continue
+                collector.add_finding(Finding(
                         rule_id=rule["id"],
                         severity=Severity[rule.get("severity", "MEDIUM")],
                         category=rule.get("category", self.category),

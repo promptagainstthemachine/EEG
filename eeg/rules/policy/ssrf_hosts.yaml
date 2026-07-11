@@ -1,0 +1,10 @@
+blocked_hostnames:
+- localhost
+- localhost.localdomain
+- metadata.google.internal
+blocked_hostname_suffixes:
+- .localhost
+blocked_hostname_prefixes:
+- 169.254.
+blocked_exact_hosts:
+- metadata

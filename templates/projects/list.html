@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Projects</h1>
+    {% if dashboard_projects or can_add %}
+    <div class="page-header-actions">
+        {% if dashboard_projects %}
+        {% include "ui/partials/dashboard_project_selector.html" %}
+        {% endif %}
+        {% if active_project %}
+        {% with gateway_only=active_project.is_gateway_app %}
+        <form class="eeg-scan-form"
+              hx-post="{% url 'ui:projects:scan' active_project.pk %}"
+              hx-target="#scan-result"
+              hx-swap="innerHTML"
+              hx-sync="none"
+              hx-indicator="#scan-btn-full"
+              {% if gateway_only %}onsubmit="return false;"{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="scan_type" value="full">
+            <button type="submit"
+                    id="scan-btn-full"
+                    class="btn eeg-btn-full-scan{% if gateway_only %} eeg-btn-full-scan--unavailable{% endif %}"
+                    title="{% if gateway_only %}Full Scan is not available for gateway apps — monitor via Traces and Agents{% elif full_scan_in_progress %}Scan in progress…{% else %}Full scan for {{ active_project.name }}{% endif %}"
+                    {% if full_scan_in_progress or gateway_only %}disabled{% endif %}
+                    {% if full_scan_in_progress %}aria-busy="true"{% endif %}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Full Scan
+            </button>
+        </form>
+        {% endwith %}
+        {% endif %}
+        {% if can_add %}
+        <a href="{% url 'ui:projects:create' %}" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Project
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div id="scan-result" aria-live="polite">{% if active_full_scan and active_project %}{% include "projects/partials/scan_async_poll.html" with scan_run=active_full_scan project=active_project %}{% endif %}</div>
+
+{% if projects %}
+<p class="muted projects-usage-meta">{{ current_count }} project{{ current_count|pluralize }} · Gateway apps appear here when they connect</p>
+<div style="display: grid; gap: 1rem;" id="projects-list-root">
+    {% for project in projects %}
+    <div class="panel" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+        <div style="min-width: 0;">
+            <h3 style="margin-bottom: 0.25rem;">
+                <a href="{% url 'ui:projects:detail' project.pk %}" style="color: inherit; text-decoration: none;">
+                    {{ project.name }}
+                </a>
+            </h3>
+            <div style="display: flex; gap: 1rem; color: var(--text-secondary); font-size: 0.875rem; flex-wrap: wrap;">
+                <span>{{ project.get_project_type_display }}</span>
+                {% if project.gateway_agent_key %}
+                <span class="muted">{{ project.gateway_agent_key|truncatechars:40 }}</span>
+                {% elif project.repository_url %}
+                <span>{{ project.repository_url|truncatechars:40 }}</span>
+                {% elif project.local_path %}
+                <span>{{ project.local_path|truncatechars:40 }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0;">
+            {% with conn=project.connection_status %}
+            <span class="severity-badge severity-{% if conn == 'connected' or conn == 'active' %}low{% elif conn == 'disconnected' or conn == 'paused' %}medium{% else %}critical{% endif %}">
+                {{ conn }}
+            </span>
+            {% endwith %}
+            <a href="{% url 'ui:projects:edit' project.pk %}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem;">Edit</a>
+            <button type="button" class="btn btn-danger" style="padding: 0.25rem 0.5rem;" data-open-project-delete="{{ project.pk }}">Delete</button>
+            <dialog id="project-delete-dialog-{{ project.pk }}" class="eeg-dialog" style="border:1px solid var(--border-default);border-radius:10px;padding:0;background:var(--bg-secondary);color:var(--text-primary);max-width:440px;">
+                <form method="post" action="{% url 'ui:projects:delete' project.pk %}" style="padding:1.25rem;">
+                    {% csrf_token %}
+                    <h3 style="font-size:1rem;margin:0 0 0.5rem;">Delete project?</h3>
+                    <p class="muted" style="font-size:0.875rem;margin:0 0 1rem;line-height:1.45;">
+                        {% if project.is_gateway_app %}
+                        <strong>{{ project.name }}</strong> will be removed from Projects and Agents,
+                        including its runtime findings and traces.
+                        It will reappear if the app connects through the gateway again.
+                        {% else %}
+                        <strong>{{ project.name }}</strong>, its scans, and all static findings will be removed. This cannot be undone.
+                        {% endif %}
+                    </p>
+                    <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+                        <button type="button" class="btn btn-secondary" data-close-project-delete="{{ project.pk }}">Cancel</button>
+                        <button type="submit" class="btn btn-danger">Delete project</button>
+                    </div>
+                </form>
+            </dialog>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<script>
+(function () {
+    var root = document.getElementById("projects-list-root");
+    if (!root || root.dataset.eegProjDlgInit) return;
+    root.dataset.eegProjDlgInit = "1";
+    root.querySelectorAll("[data-open-project-delete]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-open-project-delete");
+            var dlg = document.getElementById("project-delete-dialog-" + id);
+            if (dlg && typeof dlg.showModal === "function") dlg.showModal();
+        });
+    });
+    root.querySelectorAll("[data-close-project-delete]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            var id = btn.getAttribute("data-close-project-delete");
+            var dlg = document.getElementById("project-delete-dialog-" + id);
+            if (dlg && typeof dlg.close === "function") dlg.close();
+        });
+    });
+})();
+</script>
+{% else %}
+<p class="muted projects-usage-meta">
+    No projects yet. Add a project above, or connect an app through the EEG gateway — it will show up here automatically.
+</p>
+{% endif %}
+{% endblock %}

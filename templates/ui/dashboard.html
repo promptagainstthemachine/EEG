@@ -1,0 +1,861 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Security Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Centered max width on large monitors so cards stay proportionate */
+.dashboard-page-label {
+    margin: 0 0 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+}
+
+.dashboard-layout {
+    max-width: min(100%, 1480px);
+    margin-inline: auto;
+    width: 100%;
+}
+
+.dashboard-layout .dashboard-security-overview .panel,
+.dashboard-layout .dashboard-main-grid .panel {
+    margin-bottom: 0;
+}
+
+.dashboard-security-overview {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: stretch;
+    margin-bottom: 1.5rem;
+}
+
+@media (min-width: 1280px) {
+    .dashboard-security-overview {
+        grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    }
+}
+
+.dashboard-security-overview > .panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+.panel--score {
+    text-align: center;
+    justify-content: center;
+}
+
+.panel--severity-overview .panel-header {
+    margin-bottom: 0.75rem;
+}
+
+.panel--severity-overview .severity-bars {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.65rem;
+}
+
+.panel--severity-overview .severity-bar-row--action {
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 0.35rem 0.25rem;
+    margin-left: -0.25rem;
+    margin-right: -0.25rem;
+    transition: background 0.15s ease;
+}
+.panel--severity-overview .severity-bar-row--action:hover {
+    background: var(--bg-tertiary);
+}
+.panel--severity-overview .severity-bar-row--action:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+}
+
+.dashboard-main-grid {
+    --dashboard-pair-height: min(420px, 46vh);
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: stretch;
+}
+
+.dashboard-timeline-fullwidth {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+}
+
+.dashboard-timeline-fullwidth .chart-panel-body--timeline {
+    height: 240px;
+    min-height: 240px;
+}
+
+/* Observability row: category, severity, activity, coverage — 4 / 2 / 1 cols */
+.dashboard-observability-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.5rem;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.security-coverage-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    gap: 1rem;
+    padding: 1.1rem 1.15rem 1.25rem;
+    height: 100%;
+    min-height: 240px;
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 90% at 0% 0%, rgba(88, 166, 255, 0.1), transparent 55%),
+        radial-gradient(90% 70% at 100% 100%, rgba(63, 185, 80, 0.06), transparent 50%);
+}
+
+.panel--security-coverage.panel--coverage-static .security-coverage-body {
+    background:
+        radial-gradient(120% 90% at 0% 0%, rgba(63, 185, 80, 0.12), transparent 55%),
+        radial-gradient(90% 70% at 100% 100%, rgba(88, 166, 255, 0.05), transparent 50%);
+}
+
+.security-coverage-kicker {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.security-coverage-mode-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.security-coverage-mode {
+    font-size: clamp(1.75rem, 3.2vw, 2.35rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--text-primary);
+}
+
+.panel--security-coverage.panel--coverage-runtime .security-coverage-mode {
+    color: var(--accent-primary);
+}
+
+.panel--security-coverage.panel--coverage-static .security-coverage-mode {
+    color: var(--accent-success);
+}
+
+.security-coverage-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.security-coverage-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+}
+
+.security-coverage-dot--live {
+    background: var(--accent-success);
+    box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.22);
+    animation: coverage-pulse 2.2s ease-in-out infinite;
+}
+
+.security-coverage-dot--offline {
+    background: var(--accent-warning);
+    box-shadow: 0 0 0 3px rgba(210, 153, 34, 0.18);
+}
+
+@keyframes coverage-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(0.92); }
+}
+
+.security-coverage-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.security-coverage-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: rgba(13, 17, 23, 0.45);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+.dashboard-paired-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.dashboard-paired-panel .chart-panel-body--bar {
+    flex: 1 1 auto;
+    min-height: 240px;
+    height: auto;
+}
+
+.dashboard-paired-panel > script[type="application/json"] {
+    display: none !important;
+}
+
+.dashboard-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    min-width: 0;
+    min-height: 0;
+}
+
+.dashboard-col--main,
+.dashboard-col--sidebar {
+    align-self: stretch;
+    height: 100%;
+}
+
+.dashboard-col--main > .panel,
+.dashboard-col--sidebar > .panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Lock Security map + Recent findings to the same height */
+.panel--threat-map,
+.panel--recent-findings {
+    height: var(--dashboard-pair-height);
+    min-height: var(--dashboard-pair-height);
+    max-height: var(--dashboard-pair-height);
+}
+
+/* Security map (spider / radar) + recent findings row */
+.dashboard-col--main .threat-radar-grid {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    min-height: 0;
+}
+
+.dashboard-col--main .threat-radar-grid > script[type="application/json"] {
+    display: none !important;
+}
+
+.threat-radar-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.threat-radar-grid .threat-radar-chart {
+    width: 100%;
+    max-width: min(100%, 520px);
+    margin: 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.threat-radar-chart {
+    position: relative;
+    height: auto;
+    max-height: none;
+    min-height: 200px;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    contain: layout paint;
+}
+
+.threat-radar-chart--clickable {
+    cursor: pointer;
+}
+
+.threat-radar-chart--clickable:hover canvas {
+    filter: brightness(1.08);
+}
+
+.threat-radar-chart canvas {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none;
+}
+
+.threat-radar-empty {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-muted, #8b949e);
+    pointer-events: none;
+}
+
+.threat-radar-empty[hidden] {
+    display: none;
+}
+
+.threat-radar-hint {
+    flex: 0 0 auto;
+    margin-top: 0;
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.panel--recent-findings {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-width: 100%;
+}
+
+.dashboard-col--sidebar .findings-feed-scroll,
+.findings-feed-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+}
+.chart-panel-body {
+    height: 240px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+}
+.chart-panel-body--doughnut,
+.chart-panel-body--bar {
+    display: block;
+}
+.chart-panel-body--bar-vertical canvas {
+    max-height: 100%;
+}
+.chart-panel-body--doughnut canvas,
+.chart-panel-body--bar canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+.chart-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1rem;
+    color: var(--text-muted, #8b949e);
+    font-size: 0.8125rem;
+    pointer-events: none;
+    z-index: 1;
+}
+.chart-empty[hidden] { display: none; }
+.chart-panel-body--timeline {
+    display: block;
+    position: relative;
+    height: 200px;
+    min-height: 200px;
+}
+.chart-panel-body--timeline canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 180px;
+}
+.timeline-empty {
+    margin-top: 0.5rem;
+    text-align: center;
+    padding: 0.5rem 1rem;
+    color: var(--text-muted, #8b949e);
+    font-size: 0.8125rem;
+}
+
+.timeline-empty[hidden] { display: none; }
+.timeline-range-btn--active {
+    border-color: var(--accent-primary, #58a6ff);
+    color: var(--accent-primary, #58a6ff);
+}
+.severity-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.65rem;
+    min-width: 0;
+}
+.severity-bar-row:last-child { margin-bottom: 0; }
+.severity-bar-label { flex: 0 0 4.5rem; font-size: 0.8125rem; }
+.severity-bar-track-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 20px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.severity-bar-count { flex: 0 0 2rem; text-align: right; font-weight: 600; }
+.score-panel-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem 0.5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-default);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+.score-panel-stats .score-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    align-items: center;
+    text-align: center;
+    min-width: 0;
+}
+.score-panel-stats .score-stat strong {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.2;
+    word-break: break-word;
+}
+.panel--flush { margin: 0; }
+.panel-title {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+@media (max-width: 1200px) {
+    .dashboard-main-grid { grid-template-columns: 1fr; }
+    .dashboard-col--sidebar {
+        grid-column: 1;
+        grid-row: auto;
+    }
+    .dashboard-observability-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 900px) {
+    .dashboard-security-overview,
+    .threat-radar-grid { grid-template-columns: 1fr; }
+    .dashboard-main-grid {
+        --dashboard-pair-height: min(360px, 50vh);
+    }
+    .threat-radar-chart {
+        min-height: 200px;
+        height: auto;
+        max-height: none;
+    }
+    .threat-radar-grid .threat-radar-chart { max-width: 100%; }
+    .findings-feed-scroll,
+    .dashboard-col--sidebar .findings-feed-scroll {
+        max-height: none;
+    }
+}
+@media (max-width: 700px) {
+    .dashboard-observability-row {
+        grid-template-columns: 1fr;
+    }
+}
+@media (max-width: 600px) {
+    .score-panel-stats { grid-template-columns: 1fr; }
+    .severity-bar-label { flex: 0 0 3.25rem; font-size: 0.75rem; }
+}
+.dashboard-col canvas,
+.threat-radar-chart {
+    max-width: 100%;
+}
+.threat-category {
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    border-left: 3px solid var(--border-default);
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.threat-category--clickable {
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    border: 1px solid var(--border-muted);
+    border-left-width: 3px;
+    color: var(--text-primary);
+    font: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.threat-category--clickable:hover {
+    background: var(--bg-tertiary);
+}
+
+.threat-category span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.threat-category--accent-danger { border-left-color: var(--accent-danger); }
+.threat-category--accent-warning { border-left-color: var(--accent-warning); }
+.threat-category--accent-primary { border-left-color: var(--accent-primary); }
+.threat-category--accent-success { border-left-color: var(--accent-success); }
+.threat-category--accent-critical { border-left-color: var(--accent-critical); }
+
+a.threat-category--clickable {
+    text-decoration: none;
+    display: block;
+}
+
+.threat-category-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.threat-category-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.threat-category-label {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.threat-bar {
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    margin-top: 0.5rem;
+    overflow: hidden;
+}
+
+.threat-bar-fill {
+    height: 100%;
+    transition: width 0.5s;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+
+</style>
+{% endblock %}
+
+{% block content %}
+<p class="dashboard-page-label">Dashboard</p>
+<div class="dashboard-layout">
+<div class="page-header" style="margin-bottom: 1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+    <div>
+        {% if active_project %}
+        <h1 class="page-title" style="font-size:1.15rem;margin:0;">{{ active_project.name }}</h1>
+        {% else %}
+        <h1 class="page-title" style="font-size:1.15rem;margin:0;">Select a project</h1>
+        <p class="muted" style="margin:0.25rem 0 0;font-size:0.8rem;">Dashboard shows one active project’s findings at a time.</p>
+        {% endif %}
+    </div>
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+        {% include "ui/partials/dashboard_project_selector.html" %}
+        {% if not dashboard_projects %}
+        <a href="{% url 'ui:projects:create' %}" class="btn btn-primary">Add Project</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if requires_project %}
+<div class="panel" style="text-align:center;padding:2.5rem 1.5rem;">
+    <p style="margin:0 0 0.75rem;font-size:1rem;">Choose a project to open its security dashboard.</p>
+    <p class="muted" style="margin:0 0 1.25rem;max-width:36rem;margin-inline:auto;">
+        Static projects hold code-scan findings. Runtime (gateway) projects hold live agent detections.
+        To scan code for a gateway app, add a separate static project with the repository or local path.
+    </p>
+    {% if not dashboard_projects %}
+    <a href="{% url 'ui:projects:create' %}" class="btn btn-primary">Add your first project</a>
+    {% endif %}
+</div>
+{% else %}
+<div class="dashboard-security-overview">
+    <div class="panel panel--flush panel--score">
+        <div style="font-size: clamp(2rem, 6vw, 3rem); font-weight: 700; line-height: 1; color: {% if security_score >= 80 %}var(--accent-success){% elif security_score >= 50 %}var(--accent-warning){% else %}var(--accent-danger){% endif %};">{{ security_score }}</div>
+        <div class="muted" style="font-size: 0.875rem; margin-top: 0.35rem;">Security Score</div>
+        <div class="muted" style="font-size: 0.75rem; margin-top: 0.2rem;">{% if is_runtime_project %}Runtime detections for this project{% else %}Code findings + runtime detections{% endif %}</div>
+        <div class="score-panel-stats">
+            <div class="score-stat">
+                <span>Last scan</span>
+                <strong>{{ last_scan_time }}</strong>
+            </div>
+            <div class="score-stat">
+                <span>Runtime (24h)</span>
+                <strong>{{ runtime_signals_24h }}</strong>
+            </div>
+            <div class="score-stat">
+                <span>Scans (24h)</span>
+                <strong>{{ total_scans_24h }}</strong>
+            </div>
+        </div>
+    </div>
+    <div class="panel panel--flush panel--severity-overview">
+        <div class="panel-header">
+            <h2 class="panel-title">Open findings by severity</h2>
+            <div style="display:flex; gap:0.35rem; flex-wrap:wrap;">
+                {% if not is_runtime_project %}
+                <a href="{% url 'ui:findings_explorer' %}?project={{ active_project.pk }}" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">Static</a>
+                {% endif %}
+                <a href="{% url 'ui:findings_runtime' %}?project={{ active_project.pk }}" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">Runtime{% if runtime_detection_count %} · {{ runtime_detection_count }}{% endif %}</a>
+            </div>
+        </div>
+        <div class="severity-bars">
+                <div class="severity-bar-row severity-bar-row--action" role="button" tabindex="0" aria-label="View critical findings"
+                     onclick="filterBySeverity('critical')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterBySeverity('critical');}">
+            <span class="severity-bar-label" style="color:var(--accent-critical);">Critical</span>
+            <div class="severity-bar-track-wrap"><div style="height:100%;width:{{ critical_pct }}%;background:var(--accent-critical);"></div></div>
+            <span class="severity-bar-count">{{ critical_count }}</span>
+        </div>
+                <div class="severity-bar-row severity-bar-row--action" role="button" tabindex="0" aria-label="View high findings"
+                     onclick="filterBySeverity('high')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterBySeverity('high');}">
+            <span class="severity-bar-label" style="color:var(--accent-danger);">High</span>
+            <div class="severity-bar-track-wrap"><div style="height:100%;width:{{ high_pct }}%;background:var(--accent-danger);"></div></div>
+            <span class="severity-bar-count">{{ high_count }}</span>
+        </div>
+                <div class="severity-bar-row severity-bar-row--action" role="button" tabindex="0" aria-label="View medium findings"
+                     onclick="filterBySeverity('medium')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterBySeverity('medium');}">
+            <span class="severity-bar-label" style="color:var(--accent-warning);">Medium</span>
+            <div class="severity-bar-track-wrap"><div style="height:100%;width:{{ medium_pct }}%;background:var(--accent-warning);"></div></div>
+            <span class="severity-bar-count">{{ medium_count }}</span>
+        </div>
+                <div class="severity-bar-row severity-bar-row--action" role="button" tabindex="0" aria-label="View low findings"
+                     onclick="filterBySeverity('low')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();filterBySeverity('low');}">
+            <span class="severity-bar-label" style="color:var(--accent-success);">Low</span>
+            <div class="severity-bar-track-wrap"><div style="height:100%;width:{{ low_pct }}%;background:var(--accent-success);"></div></div>
+            <span class="severity-bar-count">{{ low_count }}</span>
+        </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Dashboard Grid -->
+<div class="dashboard-main-grid">
+    <div class="dashboard-col dashboard-col--main">
+
+        <div class="panel panel--threat-map">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2" style="margin-right: 0.5rem;" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg>
+                    Security map
+                </h2>
+                <a href="{% url 'ui:threat_graph' %}" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">3D graph</a>
+            </div>
+            <div class="threat-radar-grid">
+                <div class="threat-radar-chart threat-radar-chart--clickable" id="threat-radar-chart">
+                    <div id="threat-radar-empty" class="threat-radar-empty"{% if threat_radar.has_data %} hidden{% endif %}>
+                        No findings to map yet. Connect gateway traffic or run <strong>Full Scan</strong>.
+                    </div>
+                    <canvas id="threatRadar" aria-label="Security threat radar chart"></canvas>
+                </div>
+                <p class="threat-radar-hint">Click a spoke to filter findings by threat category.</p>
+                {{ threat_radar|json_script:"threat-radar-data" }}
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Recent findings -->
+    <div class="dashboard-col dashboard-col--sidebar">
+
+        <!-- Recent code-security findings -->
+        <div class="panel panel--recent-findings">
+            <div class="panel-header">
+                <h2 class="panel-title">Recent findings</h2>
+                <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+                    {% if not is_runtime_project %}
+                    <a href="{% url 'ui:findings_explorer' %}?project={{ active_project.pk }}" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">Static</a>
+                    {% endif %}
+                    <a href="{% url 'ui:findings_runtime' %}?project={{ active_project.pk }}" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">Runtime</a>
+                </div>
+            </div>
+            <div class="findings-feed-scroll"
+                 hx-get="{% url 'ui:findings_feed' %}?layout=stack{% if active_project %}&project={{ active_project.pk }}{% endif %}"
+                 hx-trigger="load, every 15s"
+                 hx-swap="innerHTML">
+                <p class="muted" style="padding: 1rem; text-align: center;">Loading…</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-observability-row">
+        <div class="panel dashboard-paired-panel panel--findings-category">
+            <div class="panel-header">
+                <h2 class="panel-title">Findings by category</h2>
+            </div>
+            <div class="chart-panel-body chart-panel-body--bar">
+                <div id="category-empty" class="chart-empty"{% if category_distribution.has_data %} hidden{% endif %}>
+                    No categorized findings yet (static or runtime).
+                </div>
+                <canvas id="categoryBar" aria-label="Findings by category chart"></canvas>
+            </div>
+            {{ category_distribution|json_script:"category-data" }}
+        </div>
+
+        <div class="panel dashboard-paired-panel panel--severity-chart">
+            <div class="panel-header">
+                <h2 class="panel-title">Findings by severity</h2>
+            </div>
+            <div class="chart-panel-body chart-panel-body--doughnut">
+                <div id="severity-empty" class="chart-empty"{% if severity_distribution.has_data %} hidden{% endif %}>
+                    No findings yet — gateway detections and scan results appear here.
+                </div>
+                <canvas id="severityPie" aria-label="Findings by severity chart"></canvas>
+            </div>
+            {{ severity_distribution|json_script:"severity-data" }}
+        </div>
+
+        <div class="panel dashboard-paired-panel panel--scan-activity">
+            <div class="panel-header">
+                <h2 class="panel-title">Activity (90d)</h2>
+                {% if scan_distribution.has_data %}
+                <span class="muted" style="font-size:0.7rem;">{{ scan_distribution.total }} events</span>
+                {% endif %}
+            </div>
+            <div class="chart-panel-body chart-panel-body--bar chart-panel-body--bar-vertical">
+                <div id="scan-empty" class="chart-empty chart-empty--activity"{% if scan_distribution.has_data %} hidden{% endif %}>
+                    <div class="chart-empty__title">No activity yet</div>
+                    <div class="chart-empty__hint">Gateway traffic and Full Scans show up here.</div>
+                </div>
+                <canvas id="scanBar" aria-label="Security activity chart"></canvas>
+            </div>
+            {{ scan_distribution|json_script:"scan-data" }}
+        </div>
+
+        <div class="panel dashboard-paired-panel panel--security-coverage {% if is_runtime_project %}panel--coverage-runtime{% else %}panel--coverage-static{% endif %}">
+            <div class="panel-header">
+                <h2 class="panel-title">Coverage</h2>
+            </div>
+            <div class="security-coverage-body">
+                {% if is_runtime_project %}
+                <div class="security-coverage-kicker">Protection mode</div>
+                <div class="security-coverage-mode-row">
+                    <div class="security-coverage-mode">Runtime</div>
+                    <div class="security-coverage-status">
+                        <span class="security-coverage-dot {% if active_project.connection_status == 'connected' %}security-coverage-dot--live{% else %}security-coverage-dot--offline{% endif %}" aria-hidden="true"></span>
+                        {% if active_project.connection_status == 'connected' %}Live{% else %}Offline{% endif %}
+                    </div>
+                </div>
+                <div class="security-coverage-chips">
+                    <span class="security-coverage-chip">Gateway</span>
+                    <span class="security-coverage-chip">No Full Scan</span>
+                </div>
+                {% else %}
+                <div class="security-coverage-kicker">Protection mode</div>
+                <div class="security-coverage-mode-row">
+                    <div class="security-coverage-mode">Static</div>
+                    <div class="security-coverage-status">
+                        <span class="security-coverage-dot security-coverage-dot--live" aria-hidden="true"></span>
+                        Active
+                    </div>
+                </div>
+                <div class="security-coverage-chips">
+                    <span class="security-coverage-chip">{{ active_project.get_project_type_display }}</span>
+                    <span class="security-coverage-chip">Full Scan</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Full-width row: spans main + sidebar columns -->
+    <div class="panel dashboard-timeline-fullwidth">
+        <div class="panel-header">
+            <h2 class="panel-title" id="timeline-panel-title">Findings Timeline (7 Days)</h2>
+            <div class="timeline-range-btns" style="display: flex; gap: 0.5rem;">
+                <button type="button" class="btn btn-secondary timeline-range-btn timeline-range-btn--active" data-range="7d" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">7D</button>
+                <button type="button" class="btn btn-secondary timeline-range-btn" data-range="30d" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">30D</button>
+                <button type="button" class="btn btn-secondary timeline-range-btn" data-range="90d" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">90D</button>
+            </div>
+        </div>
+        <div class="chart-panel-body chart-panel-body--timeline">
+            <canvas id="timelineChart" aria-label="Findings timeline chart"></canvas>
+        </div>
+        <p id="timeline-empty" class="timeline-empty"{% if timeline.has_data %} hidden{% endif %}>
+            No findings yet. Gateway detections and Full Scan results appear on this timeline.
+        </p>
+    </div>
+    {{ timeline|json_script:"timeline-data" }}
+</div>
+{% endif %}
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+{% if not requires_project %}
+<script>
+window.filterBySeverity = function (severity) {
+    var params = new URLSearchParams({ severity: severity });
+    {% if active_project %}
+    params.set('project', '{{ active_project.pk }}');
+    {% endif %}
+    window.location.href = '/findings/?' + params.toString();
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script type="application/json" id="dashboard-page-config">
+{"timelineUrl": "{% url 'ui:dashboard_timeline' %}"{% if active_project %}, "projectId": {{ active_project.pk }}, "isRuntimeProject": {% if is_runtime_project %}true{% else %}false{% endif %}{% endif %}}
+</script>
+<script src="{% static 'js/dashboard-charts.js' %}"></script>
+{% endif %}
+
+{% endblock %}

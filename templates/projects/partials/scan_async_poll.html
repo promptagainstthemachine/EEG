@@ -1,0 +1,13 @@
+<div id="project-scan-poll-{{ scan_run.pk }}"
+     class="panel scan-async-poll"
+     style="margin-top:1rem;border-color:var(--accent-warning);"
+     data-scan-run-id="{{ scan_run.pk }}"
+     hx-get="{% url 'ui:projects:scan_status' project.pk %}?scan_run={{ scan_run.pk }}"
+     hx-trigger="load, every 2s"
+     hx-swap="outerHTML">
+    <p style="margin:0 0 0.75rem;color:var(--text-primary);">
+        <span class="loading-spinner" style="width:14px;height:14px;border-width:2px;vertical-align:middle;margin-right:0.4rem;"></span>
+        {{ scan_run.get_scan_type_display }} scan in progress…
+    </p>
+    <p style="margin:0;color:var(--text-muted);font-size:0.8125rem;">Run ID {{ scan_run.pk }}</p>
+</div>

@@ -1,4 +1,6 @@
 include README.md
 include LICENSE
+include docs/CLI.md
 recursive-include eeg/rules *.yaml
+recursive-include eeg/runtime/packs *.yaml
 

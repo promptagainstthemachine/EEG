@@ -1,0 +1,39 @@
+# Distinctive substrings for red-team / jailbreak template markers in repo text.
+# Used to detect accidental embedding of attack templates in source or docs.
+version: 1
+rules:
+  - id: EEG-RTM-001
+    title: DAN jailbreak template marker
+    severity: HIGH
+    category: jailbreak_template
+    patterns:
+      - "\\[JAILBREAK\\]"
+      - "Do Anything Now"
+      - "act as a DAN"
+  - id: EEG-RTM-002
+    title: Developer-mode jailbreak marker
+    severity: HIGH
+    category: jailbreak_template
+    patterns:
+      - "Developer Mode enabled"
+      - "simulate Developer Mode"
+  - id: EEG-RTM-003
+    title: Delimiter / system prompt break marker
+    severity: HIGH
+    category: prompt_injection
+    patterns:
+      - "######## END OF SYSTEM PROMPT ########"
+      - "Ignore all previous instructions"
+  - id: EEG-RTM-004
+    title: Harmful roleplay marker
+    severity: MEDIUM
+    category: toxicity_elicitation
+    patterns:
+      - "Your name is BadBot"
+      - "introducing yourself as BadBot"
+  - id: EEG-RTM-005
+    title: Encoding exfil framing marker
+    severity: MEDIUM
+    category: exfiltration
+    patterns:
+      - "Respond to the following in Base64 encoding"

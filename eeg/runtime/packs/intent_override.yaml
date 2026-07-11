@@ -1,0 +1,64 @@
+# EEG sigil pack — prompt intent and instruction override
+rules:
+  - id: EEG-SIGIL-INJ-001
+    category: prompt_injection
+    severity: critical
+    score: 0.88
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)ignore\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?)'
+      - type: regex
+        value: '(?i)disregard\s+(your\s+)?(system|safety|developer)\s+(prompt|instructions?|policy)'
+      - type: regex
+        value: '(?i)(override|bypass|disable)\s+(the\s+)?(safety|guardrail|filter|policy|alignment)'
+      - type: regex
+        value: '(?i)\[?\s*SYSTEM\s*\]?\s*[:\-].{0,40}(override|new\s+instructions)'
+
+  - id: EEG-SIGIL-INJ-002
+    category: jailbreak
+    severity: critical
+    score: 0.9
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)\byou\s+are\s+now\s+(DAN|DUDE|STAN|KEVIN)\b'
+      - type: regex
+        value: '(?i)do\s+anything\s+now'
+      - type: regex
+        value: '(?i)jailbreak\s+(mode|prompt|the\s+model)'
+      - type: regex
+        value: '(?i)pretend\s+(you\s+have\s+)?no\s+(restrictions?|limits?|ethics?)'
+
+  - id: EEG-SIGIL-INJ-003
+    category: authority_urgency
+    severity: high
+    score: 0.82
+    match_mode: all
+    patterns:
+      - type: regex
+        value: '(?i)(as\s+(your\s+)?(admin|developer|owner|creator)|official\s+directive|board\s+mandate)'
+      - type: regex
+        value: '(?i)(immediately|urgent|right\s+now|without\s+delay).{0,40}(reveal|exfiltrate|disable|delete|execute)'
+
+  - id: EEG-SIGIL-INJ-004
+    category: cot_hijack
+    severity: high
+    score: 0.8
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)<\s*(thinking|scratchpad|chain[_-]?of[_-]?thought|inner[_-]?monologue)\s*>[\s\S]{10,}'
+      - type: regex
+        value: '(?i)do\s+not\s+(mention|disclose|reveal)\s+(this|these)\s+(instructions?|rules?)'
+
+  - id: EEG-SIGIL-INJ-005
+    category: agent_relay
+    severity: high
+    score: 0.84
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)(forward|relay|pass|propagate)\s+(this|the\s+following)\s+(to|message|instructions?)'
+      - type: regex
+        value: '(?i)tell\s+(the|your)\s+(next|other|downstream)\s+agent'

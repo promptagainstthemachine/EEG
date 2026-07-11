@@ -1,0 +1,22 @@
+{# HTMX partial: finding cards (same layout as findings_explorer) #}
+{% if finding_rows %}
+<div class="findings-cards">
+    {% for row in finding_rows %}
+    {% include "ui/partials/finding_card.html" with row=row %}
+    {% endfor %}
+</div>
+
+{% if findings.has_other_pages %}
+<div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem;">
+    {% if findings.has_previous %}
+    <a href="?page={{ findings.previous_page_number }}{% if filters.severity %}&severity={{ filters.severity }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.project %}&project={{ filters.project }}{% endif %}" class="btn btn-secondary">Previous</a>
+    {% endif %}
+    <span style="padding: 0.5rem 1rem;">Page {{ findings.number }} of {{ findings.paginator.num_pages }}</span>
+    {% if findings.has_next %}
+    <a href="?page={{ findings.next_page_number }}{% if filters.severity %}&severity={{ filters.severity }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.project %}&project={{ filters.project }}{% endif %}" class="btn btn-secondary">Next</a>
+    {% endif %}
+</div>
+{% endif %}
+{% else %}
+<p class="muted">No findings match your filters.</p>
+{% endif %}

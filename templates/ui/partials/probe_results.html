@@ -1,0 +1,86 @@
+<div class="panel" style="margin-top: 1rem;">
+    <div class="panel-header">
+        <h3 class="panel-title">Probe Results</h3>
+        {% if project %}
+        <span class="muted" style="font-size: 0.875rem;">{{ project.name }}</span>
+        {% endif %}
+    </div>
+
+    {% if result.error %}
+    <p class="muted" style="color: var(--severity-high); margin-bottom: 0.75rem;">
+        {{ result.error }}
+    </p>
+    {% endif %}
+
+    {% if result.summary %}
+    <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+        <span class="severity-badge severity-{% if result.success %}low{% else %}medium{% endif %}">
+            {% if result.success %}Completed{% else %}Partial{% endif %}
+        </span>
+        <span class="muted">
+            {{ result.summary.total_findings }} finding{{ result.summary.total_findings|pluralize }}
+            {% if result.summary.probes_executed %}
+            — probes: {{ result.summary.probes_executed|join:", " }}
+            {% endif %}
+        </span>
+    </div>
+    {% endif %}
+
+    {% if result.probe_results %}
+    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        {% for probe_id, probe_result in result.probe_results.items %}
+        <div style="padding: 0.75rem; background: var(--bg-primary); border-radius: 6px; border: 1px solid var(--border-color, rgba(255,255,255,0.08));">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <strong>{{ probe_id }}</strong>
+                <span class="severity-badge severity-{% if probe_result.posture_state == 'critical' %}critical{% elif probe_result.posture_state == 'at_risk' %}high{% else %}low{% endif %}">
+                    {{ probe_result.posture_state|default:"ok" }}
+                </span>
+            </div>
+
+            {% if probe_result.errors %}
+            <p class="muted" style="font-size: 0.8125rem; margin-bottom: 0.5rem;">
+                {% for err in probe_result.errors %}{{ err }}{% if not forloop.last %}; {% endif %}{% endfor %}
+            </p>
+            {% endif %}
+
+            {% if probe_result.signals %}
+            <ul style="margin: 0; padding-left: 1.25rem; font-size: 0.875rem;">
+                {% for signal in probe_result.signals %}
+                <li style="margin-bottom: 0.25rem;">
+                    <span class="severity-badge severity-{{ signal.severity_band|default:'medium'|lower }}" style="font-size: 0.7rem;">
+                        {{ signal.severity_band|default:"MEDIUM" }}
+                    </span>
+                    {{ signal.pulse_summary|default:signal.signal_category|truncatechars:120 }}
+                </li>
+                {% endfor %}
+            </ul>
+            {% elif probe_result.probes %}
+            <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+                {% for probe in probe_result.probes %}
+                <div style="font-size: 0.875rem;">
+                    <span class="severity-badge severity-{% if probe.blocked %}low{% else %}critical{% endif %}">
+                        {% if probe.blocked %}Blocked{% else %}Bypassed{% endif %}
+                    </span>
+                    {{ probe.category }} — {{ probe.description|truncatechars:80 }}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="muted" style="font-size: 0.875rem; margin: 0;">No signals recorded.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% elif result.findings %}
+    <ul style="margin: 0; padding-left: 1.25rem; font-size: 0.875rem;">
+        {% for finding in result.findings|slice:":20" %}
+        <li style="margin-bottom: 0.35rem;">
+            <span class="severity-badge severity-{{ finding.severity|lower }}">{{ finding.severity }}</span>
+            {{ finding.message|truncatechars:100 }}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No probe results available. Configure an API endpoint on the project.</p>
+    {% endif %}
+</div>

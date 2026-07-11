@@ -1,0 +1,152 @@
+# EEG shared static rules — AI agent / MCP / supply-chain surface (EEG-native IDs).
+# Parity concepts reconciled with Coding-Context static-analysis guidance; no upstream rule IDs.
+
+rules:
+  - id: EEG-SURF-SEC-501
+    name: "Likely OpenAI-style API key material in source"
+    severity: CRITICAL
+    category: secrets
+    description: "Short-lived credential pattern resembling vendor API keys in code or config"
+    cwe: "CWE-798"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'sk-[A-Za-z0-9]{20,}'
+        file_types: [".py", ".js", ".ts", ".tsx", ".json", ".yaml", ".yml", ".env", ".toml", ".md"]
+    recommendation: "Load API keys from environment or a managed secret store; rotate any key that was committed."
+
+  - id: EEG-SURF-SEC-502
+    name: "Likely long-lived vendor secret token in source"
+    severity: CRITICAL
+    category: secrets
+    description: "High-entropy token pattern commonly used for provider authentication"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'sk-ant-api[A-Za-z0-9_-]{20,}'
+        file_types: [".py", ".js", ".ts", ".json", ".yaml", ".yml", ".env", ".toml"]
+    recommendation: "Never commit provider secrets; use workload identity or a secrets manager."
+
+  - id: EEG-SURF-SEC-503
+    name: "Fine-grained repository token pattern in source"
+    severity: CRITICAL
+    category: secrets
+    description: "Host token format often used for repository or package feeds"
+    cwe: "CWE-798"
+    patterns:
+      - type: regex
+        match: 'ghp_[A-Za-z0-9]{30,}'
+        file_types: [".py", ".sh", ".yaml", ".yml", ".json", ".env", ".toml", ".md"]
+    recommendation: "Revoke exposed tokens and replace with scoped CI secrets or OIDC."
+
+  - id: EEG-SURF-POL-501
+    name: "Inline bearer token in tool transport configuration"
+    severity: HIGH
+    category: policy
+    description: "JSON or YAML describing tool servers with embedded bearer credentials"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: '(?i)(mcpServers|"mcp"|tools)\s*:[^\n]{0,600}(bearer|Bearer)\s+[A-Za-z0-9\-_\.]{24,}'
+        file_types: [".json", ".yaml", ".yml"]
+    recommendation: "Reference secrets by name or environment indirection; avoid inline bearer strings in configs checked into git."
+
+  - id: EEG-SURF-POL-502
+    name: "Subprocess invoked with shell and string-composed arguments"
+    severity: HIGH
+    category: policy
+    description: "Shell execution with interpolated arguments increases command-injection risk from model-driven text"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: 'subprocess\.(run|Popen|call|check_output)\([^)]*shell\s*=\s*True[^)]*\)'
+        file_types: [".py"]
+    recommendation: "Avoid shell=True; pass argv lists and validate inputs before invoking subprocesses."
+
+  - id: EEG-SURF-PRM-501
+    name: "System or developer message concatenated with runtime user text"
+    severity: HIGH
+    category: prompt
+    description: "Direct string concatenation into system or instruction prompts weakens injection boundaries"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: '(?i)(system_prompt|SYSTEM_PROMPT|developer_message|instructions)\s*(\+=|=)\s*f?["\x27]'
+        file_types: [".py"]
+    recommendation: "Use structured message arrays and strict role separation instead of concatenating user text into system prompts."
+
+  - id: EEG-SURF-PRM-502
+    name: "Dangerous evaluation of model response text"
+    severity: CRITICAL
+    category: prompt
+    description: "eval/exec on values that may originate from remote model output"
+    owasp_llm: "LLM01: Prompt Injection"
+    patterns:
+      - type: regex
+        match: '(?i)eval\s*\(\s*(response|content|text|message|output|completion|choice)'
+        file_types: [".py"]
+      - type: regex
+        match: '(?i)exec\s*\(\s*(response|content|text|message|output|completion|choice)'
+        file_types: [".py"]
+    recommendation: "Treat model output as untrusted data; parse with schemas and never pass it to eval/exec."
+
+  - id: EEG-SURF-IAC-501
+    name: "Remote script piped into shell from installer hook"
+    severity: CRITICAL
+    category: iac
+    description: "curl/wget piping to bash is a common supply-chain and hook abuse pattern"
+    cwe: "CWE-829"
+    patterns:
+      - type: regex
+        match: '(?i)(curl|wget)\s+[^|;\n]+\|\s*(ba)?sh'
+        file_types: [".sh", ".bash"]
+    recommendation: "Pin artifacts with checksums and invoke interpreters without piping remote content into shells."
+
+  - id: EEG-SURF-MOD-601
+    name: "Deserialization of untrusted pickle streams"
+    severity: CRITICAL
+    category: model
+    description: "pickle load on untrusted streams enables arbitrary code execution"
+    owasp_llm: "LLM03: Training Data Poisoning"
+    patterns:
+      - type: regex
+        match: 'pickle\.loads?\('
+        file_types: [".py"]
+    recommendation: "Avoid pickle for untrusted model or dataset artifacts; prefer safetensors or signed, scanned formats."
+
+  - id: EEG-SURF-GW-701
+    name: "Hardcoded provider API key in gateway config"
+    severity: CRITICAL
+    category: gateway
+    description: "Gateway or LLM proxy config embeds a live provider secret"
+    cwe: "CWE-798"
+    owasp_llm: "LLM06: Excessive Agency"
+    patterns:
+      - type: regex
+        match: '(?i)(upstream_headers|provider_key|api_key|openai_api_key)\s*[:=]\s*["\']sk-[A-Za-z0-9]{20,}'
+        file_types: [".py", ".js", ".ts", ".json", ".yaml", ".yml", ".env", ".toml"]
+    recommendation: "Load provider keys from environment or a secrets manager; never commit gateway credentials."
+
+  - id: EEG-SURF-GW-702
+    name: "Gateway upstream points at loopback or link-local metadata"
+    severity: HIGH
+    category: gateway
+    description: "Upstream LLM URL targets localhost or cloud metadata hosts (SSRF risk)"
+    cwe: "CWE-918"
+    patterns:
+      - type: regex
+        match: '(?i)(upstream_url|X-EEG-Upstream-URL|base_url)\s*[:=]\s*["\']https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|169\.254\.|metadata\.google\.internal)'
+        file_types: [".py", ".js", ".ts", ".json", ".yaml", ".yml", ".env", ".toml"]
+    recommendation: "Use public provider endpoints and enable EEG upstream URL validation (url_safety)."
+
+  - id: EEG-SURF-GW-703
+    name: "Cleartext HTTP upstream for LLM gateway"
+    severity: MEDIUM
+    category: gateway
+    description: "Gateway forwards chat completions over http:// instead of https://"
+    cwe: "CWE-319"
+    patterns:
+      - type: regex
+        match: '(?i)(upstream_url|chat/completions|openai)\s*[:=].*http://(?!localhost|127\.0\.0\.1)'
+        file_types: [".py", ".js", ".ts", ".json", ".yaml", ".yml"]
+    recommendation: "Prefer HTTPS upstreams for provider APIs to protect credentials and prompts in transit."

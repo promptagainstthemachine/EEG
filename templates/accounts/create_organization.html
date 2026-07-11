@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Create Organization{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Create Your Organization</h1>
+</div>
+
+<div class="panel" style="max-width: 500px;">
+    <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">
+        Create an organization to start using EEG OSS. Add as many projects as you need — gateway-connected apps appear automatically.
+    </p>
+    
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="organization_name">Organization Name</label>
+            <input type="text" name="organization_name" id="organization_name" class="eeg-input" placeholder="Your company or project name" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Create Organization</button>
+    </form>
+</div>
+{% endblock %}

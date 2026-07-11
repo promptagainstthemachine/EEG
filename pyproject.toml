@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eeg-security"
-version = "2.3.3"
-description = "Extensive Exposure Guard — Multi-Cloud AI Security & Vulnerability Management Framework"
+version = "2.4.0"
+description = "Extensive Exposure Guard — AI/agent static scans, runtime gateway wrap, and CI/GitHub Action (eeg CLI)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [
     { name = "findthehead", email = "findthehead@proton.me" },
 ]
-keywords = ["ai", "security", "cloud", "aws", "azure", "gcp", "devsecops", "vulnerability", "scanner", "guardrails", "bedrock", "vertex", "openai"]
+keywords = ["ai", "security", "agent", "gateway", "sast", "sarif", "cloud", "aws", "azure", "gcp", "devsecops", "vulnerability", "scanner", "guardrails", "bedrock", "vertex", "openai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -65,7 +65,13 @@ Issues = "https://github.com/findthehead/eeg/issues"
 include = ["eeg*"]
 
 [tool.setuptools.package-data]
-eeg = ["rules/static/*.yaml", "rules/dynamic/*.yaml"]
+eeg = [
+    "rules/static/*.yaml",
+    "rules/dynamic/*.yaml",
+    "rules/policy/*.yaml",
+    "rules/bundles/**/*.yaml",
+    "runtime/packs/*.yaml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,9 @@
+<p class="scan-complete-notice">
+    {% if result.success %}
+    <span class="scan-complete-notice__status">Scan completed.</span>
+    View results on the <a href="{% url 'ui:dashboard' %}?project={{ project.pk }}">dashboard</a>.
+    {% else %}
+    <span class="scan-complete-notice__status scan-complete-notice__status--error">Scan failed.</span>
+    {{ result.error|default:"Unknown error occurred." }}
+    {% endif %}
+</p>

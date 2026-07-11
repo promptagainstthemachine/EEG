@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Compliance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Compliance</h1>
+    <p class="muted" style="margin: 0.35rem 0 0;">Framework posture from static findings and gateway runtime signals.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.25rem;">
+    <div class="panel" style="padding: 1rem;">
+        <div class="muted" style="font-size: 0.75rem;">Compliance score</div>
+        <div style="font-size: 1.75rem; font-weight: 600;">{{ evaluate.compliance_score|default:"—" }}</div>
+    </div>
+    <div class="panel" style="padding: 1rem;">
+        <div class="muted" style="font-size: 0.75rem;">Composite audit</div>
+        <div style="font-size: 1.75rem; font-weight: 600;">{{ audit.composite_score|default:"—" }}</div>
+    </div>
+    <div class="panel" style="padding: 1rem;">
+        <div class="muted" style="font-size: 0.75rem;">Open gaps</div>
+        <div style="font-size: 1.75rem; font-weight: 600;">{{ gaps|length }}</div>
+    </div>
+    <div class="panel" style="padding: 1rem;">
+        <div class="muted" style="font-size: 0.75rem;">Release gate</div>
+        <div style="font-size: 1.25rem; font-weight: 600;">{{ audit.release_gate_audit.verdict|default:"—" }}</div>
+    </div>
+</div>
+
+<div class="panel" style="margin-bottom: 1.25rem;">
+    <div class="panel-header"><h2 class="panel-title">Framework posture</h2></div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; padding: 1rem;">
+        {% for card in posture.cards %}
+        <div style="border: 1px solid var(--border-default); border-radius: 8px; padding: 0.85rem;">
+            <div style="font-weight: 600;">{{ card.display_name }}</div>
+            <div class="muted" style="font-size: 0.8rem; margin: 0.25rem 0;">Coverage {{ card.coverage_percent }}%</div>
+            <div style="font-size: 0.85rem;">{{ card.controls_passing }}/{{ card.controls_total }} controls · {{ card.open_issues }} open</div>
+        </div>
+        {% empty %}
+        <p class="muted">No frameworks evaluated yet.</p>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="panel" style="margin-bottom: 1.25rem;">
+    <div class="panel-header"><h2 class="panel-title">Control assessments</h2></div>
+    {% if assessments %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Framework</th>
+                <th>Score</th>
+                <th>Passing</th>
+                <th>Breached</th>
+                <th>Maturity</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in assessments %}
+            <tr>
+                <td>{{ a.display_name }}</td>
+                <td>{{ a.score }}</td>
+                <td>{{ a.controls_passing }}</td>
+                <td>{{ a.controls_breached }}</td>
+                <td>{{ a.maturity_average }}</td>
+                <td>{{ a.status }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted" style="padding: 1rem;">No assessments yet — run a scan or send gateway traffic.</p>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <div class="panel-header"><h2 class="panel-title">Open gaps</h2></div>
+    {% if gaps %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Framework</th>
+                <th>Control</th>
+                <th>Severity</th>
+                <th>Source</th>
+                <th>Evidence</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for g in gaps %}
+            <tr>
+                <td>{{ g.framework }}</td>
+                <td><code>{{ g.control_id }}</code></td>
+                <td><span class="severity-badge severity-{{ g.severity }}">{{ g.severity }}</span></td>
+                <td>{{ g.source }}</td>
+                <td class="muted">{{ g.evidence|truncatechars:120 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted" style="padding: 1rem; text-align: center;">No open compliance gaps.</p>
+    {% endif %}
+</div>
+{% endblock %}

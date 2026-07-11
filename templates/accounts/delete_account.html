@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Delete account{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Delete account</h1>
+</div>
+
+<div class="panel" style="max-width: 520px;">
+    <p style="margin-top: 0; color: var(--text-secondary); font-size: 0.9375rem; line-height: 1.5;">
+        This removes your user account{% if request.user.organization %}, organization <strong>{{ request.user.organization.name }}</strong>,{% endif %}
+        and all related projects, findings, API keys, and activity logs. This cannot be undone.
+    </p>
+    <form method="post" onsubmit="return confirm('Permanently delete your account and all data?');">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="id_password">Confirm with your current password</label>
+            <input type="password" name="password" id="id_password" class="eeg-input" required autocomplete="current-password">
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-danger">Delete my account</button>
+            <a href="{% url 'accounts:profile' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,289 @@
+# EEG rules layout — static engine reconciliation (no external CLI).
+#
+# static/     — EEG-native YAML consumed by eeg.detectors.base.BaseDetector
+# dynamic/    — Thresholds and cloud check definitions (ConfigLoader → auth scanners)
+# bundles/    — Vendored pattern packs; Semgrep-regex via BoundaryPolicyPackDetector,
+#               EEG-import via AgentForensicsScan / AinspectPackScan
+#
+# Runtime: eeg.rules.catalog_loader validates this file; scans/probes register via
+# eeg.scans.ScanRegistry and eeg.probes.ProbeRegistry.
+
+structure:
+  static:
+    description: Cloud-specific and AI surface rules in EEG-native format
+    files:
+      - aws_static.yaml
+      - azure_static.yaml
+      - gcp_static.yaml
+      - ai_surface_pack.yaml
+
+  dynamic:
+    description: Runtime thresholds and check definitions (ConfigLoader)
+    files:
+      - thresholds.yaml
+      - aws_dynamic.yaml
+      - azure_dynamic.yaml
+      - gcp_dynamic.yaml
+
+  bundles:
+    description: Vendored pattern packs for offline code security scans
+
+bundles:
+  ai_practice_patterns:
+    path: bundles/ai_practice_patterns
+    rule_count: 101
+    scanner: BoundaryPolicyPackDetector
+    scan_id: code_security
+    execution_note: >-
+      Semgrep-regex rules via BoundaryPolicyPackDetector (comments/strings filtered).
+      Taint and call-pattern rules via eeg.analysis.semantic_trace.AiPracticeSemanticEngine
+      (AST trace; skips docstrings and non-call mentions of eval/exec).
+    categories:
+      - hardcoded_api_keys
+      - missing_safety_modes
+      - user_input_in_system_prompt
+      - llm_output_to_exec
+      - mcp_security
+      - hooks_security
+      - agent_unbounded_loop
+
+  aegis_rules:
+    path: bundles/aegis_rules
+    rule_count: 8
+    scanner: AgentForensicsScan
+    scan_id: agent_forensics
+    source: agent-audit-2
+    categories:
+      - ai-config
+      - browser
+      - certificates
+      - cloud
+      - crypto
+      - devtools
+      - secrets
+      - ssh
+
+  prompt_guard:
+    path: bundles/prompt_guard
+    rule_count: 26
+    scanner: AgentForensicsScan
+    scan_id: agent_forensics
+    source: cisco-promptguard
+    categories:
+      - hardcoded_secrets
+      - pii_detection
+      - exfiltration_patterns
+
+  ssrf_patterns:
+    path: bundles/ssrf_patterns
+    rule_count: 11
+    scanner: AgentForensicsScan
+    scan_id: agent_forensics
+    source: aguara/ssrf-cloud
+    categories:
+      - ssrf
+      - cloud_metadata
+      - internal_network
+
+  third_party_content:
+    path: bundles/third_party_content
+    rule_count: 10
+    scanner: AgentForensicsScan
+    scan_id: agent_forensics
+    source: aguara/third-party-content
+    categories:
+      - supply_chain
+      - external_content
+      - deserialization
+
+  external_download:
+    path: bundles/external_download
+    rule_count: 15
+    scanner: AgentForensicsScan
+    scan_id: agent_forensics
+    source: aguara/external-download
+    categories:
+      - download
+      - installation
+      - supply_chain
+
+  ainspect_builtin:
+    path: bundles/ainspect_builtin
+    rule_count: 5
+    scanner: AinspectPackScan
+    scan_id: ainspect_pack
+    source: Agentsec-Tools/agent-audit
+    categories:
+      - owasp_agentic
+      - mcp
+      - langchain
+      - command_injection
+      - credentials
+
+  redteam_marker_bundle:
+    path: bundles/redteam_marker_bundle
+    rule_count: 5
+    scanner: RedteamMarkerSurfaceScan
+    scan_id: redteam_marker_surface
+    source: Agentsec-Tools/plexiglass
+    categories:
+      - jailbreak
+      - redteam
+      - prompt_injection
+
+scans:
+  code_security:
+    description: Static code security patterns (Semgrep-regex AI practice pack)
+    scanner: eeg.scans.code_security.CodeSecurityScan
+
+  agent_forensics:
+    description: Agent forensics (aegis, prompt guard, SSRF, downloads, templates)
+    scanner: eeg.scans.agent_forensics.AgentForensicsScan
+
+  ainspect_pack:
+    description: Vendored agent-audit OWASP / MCP / LangChain YAML
+    scanner: eeg.scans.ainspect_pack.AinspectPackScan
+
+  model_artifact:
+    description: Model serialization safety
+    scanner: eeg.scans.model_artifact.ModelArtifactScan
+
+  dependency_vuln:
+    description: Dependency vulnerability scanning
+    scanner: eeg.scans.dependency_vuln.DependencyVulnScan
+
+  memoryguard_surface:
+    description: Memory poisoning and drift heuristics on text artifacts
+    scanner: eeg.scans.memoryguard_surface.MemoryguardSurfaceScan
+
+  mcp_client_config:
+    description: MCP client JSON transport and supply-chain risks
+    scanner: eeg.scans.mcp_client_config.MCPClientConfigScan
+
+  textguard_unicode:
+    description: Invisible Unicode and API-token regex heuristics
+    scanner: eeg.scans.textguard_unicode.TextguardUnicodeScan
+
+  a2a_agent_surface:
+    description: A2A JSON/text heuristics for agent cards
+    scanner: eeg.scans.a2a_agent_surface.A2AAgentSurfaceScan
+
+  redteam_marker_surface:
+    description: Red-team template markers in text files
+    scanner: eeg.scans.redteam_marker_surface.RedteamMarkerSurfaceScan
+
+  mcp_tool_response_leak:
+    description: MCP tool handlers returning credential-like keys
+    scanner: eeg.scans.mcp_tool_response_leak.MCPToolResponseLeakScan
+
+  cloud_static_rules:
+    description: Cloud IaC and repo static rules (aws/azure/gcp static YAML)
+    scanner: eeg.scans.cloud_static_rules.CloudStaticRulesScan
+    requires_cloud_project: true
+
+  gateway_oss_surface:
+    description: Gateway upstream SSRF, cleartext HTTP, and hardcoded provider key heuristics
+    scanner: eeg.scans.gateway_oss_surface.GatewayOssSurfaceScan
+
+# Scan profiles used by ScanningService (replaces hardcoded STATIC_REPO_SCAN_IDS)
+scan_profiles:
+  full:
+    scans:
+      - code_security
+      - dependency_vuln
+      - ainspect_pack
+      - agent_forensics
+      - a2a_agent_surface
+      - mcp_client_config
+      - mcp_tool_response_leak
+      - textguard_unicode
+      - memoryguard_surface
+      - redteam_marker_surface
+      - gateway_oss_surface
+    include_cloud_static_when: aws,gcp,azure
+
+  code:
+    scans:
+      - code_security
+      - ainspect_pack
+      - agent_forensics
+      - gateway_oss_surface
+
+  agent:
+    scans:
+      - agent_forensics
+      - a2a_agent_surface
+      - mcp_client_config
+      - mcp_tool_response_leak
+      - memoryguard_surface
+      - gateway_oss_surface
+
+  model:
+    scans:
+      - model_artifact
+
+  dependency:
+    scans:
+      - dependency_vuln
+
+probe_profiles:
+  api_endpoint:
+    probes:
+      - gateway_surface
+      - mcp_transport
+      - aisec_http_surface
+      - mcp_jsonrpc_handshake
+
+probes:
+  mcp_transport:
+    description: MCP server transport security probe
+    scanner: eeg.probes.mcp_transport.MCPTransportProbe
+    requires_network: true
+
+  gateway_surface:
+    description: LLM/MCP gateway surface (TLS, /health, /mcp)
+    scanner: eeg.probes.gateway_surface.GatewaySurfaceProbe
+    requires_network: true
+
+  aisec_http_surface:
+    description: Agentic Security FastAPI surface probes
+    scanner: eeg.probes.aisec_http_surface.AisecHttpSurfaceProbe
+    requires_network: true
+
+  mcp_jsonrpc_handshake:
+    description: MCP JSON-RPC initialize + tools/list
+    scanner: eeg.probes.mcp_jsonrpc_handshake.MCPJsonRpcHandshakeProbe
+    requires_network: true
+
+  interaction_benchmark:
+    description: Adversarial prompt benchmark probe
+    scanner: eeg.probes.interaction_benchmark.InteractionBenchmarkProbe
+    requires_network: true
+    requires_enablement: true
+
+  auto_redteam:
+    description: Automated red-team evaluation (toxicity, PII, jailbreak)
+    scanner: eeg.probes.auto_redteam.AutoRedTeamProbe
+    requires_network: true
+    requires_enablement: true
+    categories:
+      - jailbreak
+      - toxicity
+      - pii
+      - exfiltration
+      - injection
+      - role_confusion
+      - harmful_behaviors
+
+vuln_sources:
+  nvd:
+    description: National Vulnerability Database
+    api: https://services.nvd.nist.gov/rest/json/cves/2.0
+
+  ghsa:
+    description: GitHub Security Advisory Database
+    api: https://api.github.com/advisories
+
+  osv:
+    description: Open Source Vulnerabilities database
+    api: https://api.osv.dev/v1

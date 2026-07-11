@@ -1,0 +1,11 @@
+<div id="threat-intel-refresh-poll"
+     class="threat-intel-refresh-poll"
+     data-scan-run-id="{{ scan_run_id }}"
+     hx-get="{% url 'ui:threat_intel_scan_status' %}?scan_run={{ scan_run_id }}{% if active_project %}&project={{ active_project.pk }}{% endif %}"
+     hx-trigger="load, every 2s"
+     hx-swap="outerHTML">
+    <div class="threat-intel-cve-loading" aria-live="polite">
+        <span class="loading-spinner" style="width:18px;height:18px;border-width:2px;"></span>
+        <span>Fetching CVE…</span>
+    </div>
+</div>

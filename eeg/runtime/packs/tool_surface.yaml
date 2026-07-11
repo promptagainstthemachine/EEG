@@ -1,0 +1,85 @@
+# EEG sigil pack — tool argument and egress abuse
+rules:
+  - id: EEG-SIGIL-TOOL-001
+    category: path_traversal
+    severity: critical
+    score: 0.92
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)\.\./\.\./\.\./'
+      - type: regex
+        value: '(?i)\.\./etc/(passwd|shadow|hosts|sudoers)'
+      - type: regex
+        value: '(?i)\.\./\.ssh/'
+
+  - id: EEG-SIGIL-TOOL-002
+    category: sensitive_path
+    severity: high
+    score: 0.86
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)/\.ssh/(id_rsa|id_ed25519|authorized_keys)'
+      - type: regex
+        value: '(?i)/\.aws/(credentials|config)'
+      - type: regex
+        value: '(?i)/\.(env|env\.local|env\.production)\b'
+      - type: regex
+        value: '(?i)/(private[_-]?key\.pem|wallet\.dat)'
+
+  - id: EEG-SIGIL-TOOL-003
+    category: ssrf_probe
+    severity: critical
+    score: 0.93
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)https?://169\.254\.'
+      - type: regex
+        value: '(?i)metadata\.google\.internal'
+      - type: regex
+        value: '(?i)https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)[:/]'
+      - type: regex
+        value: '(?i)https?://\[::1\]'
+
+  - id: EEG-SIGIL-TOOL-004
+    category: shell_injection
+    severity: critical
+    score: 0.9
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)\$\([^)]+\)'
+      - type: regex
+        value: '(?i);\s*(rm|curl|wget|nc|python|perl|bash|sh)\b'
+      - type: regex
+        value: '(?i)\|\s*(bash|sh|zsh|powershell)\b'
+      - type: regex
+        value: '(?i)`[^`]{2,}`'
+
+  - id: EEG-SIGIL-TOOL-005
+    category: credential_spill
+    severity: critical
+    score: 0.94
+    match_mode: any
+    patterns:
+      - type: regex
+        value: 'AKIA[0-9A-Z]{16}'
+      - type: regex
+        value: 'ghp_[A-Za-z0-9]{36,}'
+      - type: regex
+        value: 'sk-[A-Za-z0-9]{20,}'
+      - type: regex
+        value: '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+
+  - id: EEG-SIGIL-TOOL-006
+    category: exfiltration
+    severity: high
+    score: 0.84
+    match_mode: any
+    patterns:
+      - type: regex
+        value: '(?i)(exfiltrate|upload|post)\s+(secrets?|credentials?|api[_-]?keys?|tokens?)'
+      - type: regex
+        value: '(?i)(pastebin|transfer\.sh|file\.io|requestbin|webhook\.site)'

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Organization Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Organization Settings</h1>
+</div>
+
+<div class="panel" style="max-width: 600px;">
+    <form method="post">
+        {% csrf_token %}
+        
+        <div class="form-group">
+            <label for="id_name">Organization Name</label>
+            <input type="text" name="name" id="id_name" class="eeg-input" value="{{ form.name.value }}">
+            {{ form.name.errors }}
+        </div>
+        
+        <h3 style="margin: 1.5rem 0 1rem; font-size: 1rem;">Security Controls</h3>
+        
+        <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border-default);">
+            <div>
+                <h4 style="margin-bottom: 0.25rem;">Auto Red-Team</h4>
+                <p class="muted" style="font-size: 0.875rem;">Enable automatic adversarial probes against your AI endpoints</p>
+            </div>
+            <input type="checkbox" name="auto_redteam_enabled" class="toggle-switch" {% if form.auto_redteam_enabled.value %}checked{% endif %}>
+        </div>
+        
+        <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border-default);">
+            <div>
+                <h4 style="margin-bottom: 0.25rem;">Model Scanning</h4>
+                <p class="muted" style="font-size: 0.875rem;">Scan model artifacts for serialization vulnerabilities</p>
+            </div>
+            <input type="checkbox" name="model_scanning_enabled" class="toggle-switch" {% if form.model_scanning_enabled.value %}checked{% endif %}>
+        </div>
+        
+        <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border-default);">
+            <div>
+                <h4 style="margin-bottom: 0.25rem;">Real-time Telemetry</h4>
+                <p class="muted" style="font-size: 0.875rem;">Collect real-time AI trace telemetry</p>
+            </div>
+            <input type="checkbox" name="realtime_telemetry_enabled" class="toggle-switch" {% if form.realtime_telemetry_enabled.value %}checked{% endif %}>
+        </div>
+        
+        <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border-default);">
+            <div>
+                <h4 style="margin-bottom: 0.25rem;">Real-time Monitoring</h4>
+                <p class="muted" style="font-size: 0.875rem;">Enable real-time security monitoring and alerts</p>
+            </div>
+            <input type="checkbox" name="realtime_monitoring_enabled" class="toggle-switch" {% if form.realtime_monitoring_enabled.value %}checked{% endif %}>
+        </div>
+        
+        <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 0;">
+            <div>
+                <h4 style="margin-bottom: 0.25rem;">Policy Enforcement</h4>
+                <p class="muted" style="font-size: 0.875rem;">Automatically block requests that violate security policies</p>
+            </div>
+            <input type="checkbox" name="policy_enforcement_enabled" class="toggle-switch" {% if form.policy_enforcement_enabled.value %}checked{% endif %}>
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <a href="{% url 'accounts:profile' %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

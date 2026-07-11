@@ -3,10 +3,17 @@ EEG - Extensive Exposure Guard
 Collector module: aggregates findings from all detectors into a unified report structure.
 """
 
-import datetime
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Dict, Optional
+
+
+def _utcnow() -> datetime:
+    """Return current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class Severity(Enum):
@@ -37,7 +44,7 @@ class Finding:
     recommendation: str
     cwe: Optional[str] = None
     owasp_llm: Optional[str] = None
-    timestamp: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: _utcnow().isoformat())
 
     def to_dict(self) -> Dict:
         return {
@@ -62,7 +69,7 @@ class Collector:
     def __init__(self):
         self.findings: List[Finding] = []
         self.scan_metadata: Dict = {}
-        self._start_time = datetime.datetime.utcnow()
+        self._start_time = _utcnow()
         self._seen_keys: set = set()
         self.permission_issues: List[Dict] = []  # Track permission-related skips
         self.completed_checks: List[str] = []    # Track successfully completed checks
@@ -87,7 +94,7 @@ class Collector:
             "check": check_name,
             "resource": resource,
             "error": str(error)[:200],  # Truncate long errors
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": _utcnow().isoformat(),
         })
         if check_name not in self.skipped_checks:
             self.skipped_checks.append(check_name)
@@ -105,7 +112,7 @@ class Collector:
         for f in self.findings:
             counts[f.severity.value] += 1
 
-        elapsed = (datetime.datetime.utcnow() - self._start_time).total_seconds()
+        elapsed = (_utcnow() - self._start_time).total_seconds()
         return {
             "total_findings": len(self.findings),
             "by_severity": counts,

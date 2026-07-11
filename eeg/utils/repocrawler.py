@@ -11,6 +11,7 @@ SCANNABLE_EXTENSIONS = {
     ".py", ".tf", ".yaml", ".yml", ".json", ".toml",
     ".hcl", ".cfg", ".ini", ".env", ".sh", ".bash",
     ".ts", ".js", ".jsx", ".tsx", ".bicep", ".tfvars",
+    ".java", ".go", ".rb",
 }
 
 SKIP_DIRS = {

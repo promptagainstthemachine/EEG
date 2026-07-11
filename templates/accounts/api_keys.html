@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}API Keys{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">API Keys</h1>
+    <a href="{% url 'accounts:profile' %}" class="btn btn-secondary">Profile &amp; settings</a>
+</div>
+
+<p class="muted" style="margin-bottom: 1.25rem; max-width: 52rem;">
+    Use keys with <code style="background:var(--bg-tertiary);padding:0.1rem 0.35rem;border-radius:4px;">Authorization: Bearer …</code>
+    or the <code style="background:var(--bg-tertiary);padding:0.1rem 0.35rem;border-radius:4px;">X-EEG-API-Key</code> header for <code style="background:var(--bg-tertiary);padding:0.1rem 0.35rem;border-radius:4px;">/api/v1/</code> requests.
+</p>
+
+{% include "accounts/partials/api_keys_root.html" with api_keys=api_keys raw_api_key=raw_api_key %}
+{% endblock %}

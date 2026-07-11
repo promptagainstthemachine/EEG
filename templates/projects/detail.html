@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ project.name }}</h1>
+        <p class="muted">{{ project.get_project_type_display }}</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        {% with gateway_only=project.is_gateway_app %}
+        <form class="eeg-scan-form"
+              hx-post="{% url 'ui:projects:scan' project.pk %}"
+              hx-target="#scan-result"
+              hx-swap="innerHTML"
+              hx-sync="none"
+              hx-indicator="#scan-btn-full"
+              {% if gateway_only %}onsubmit="return false;"{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="scan_type" value="full">
+            <button type="submit"
+                    id="scan-btn-full"
+                    class="btn eeg-btn-full-scan{% if gateway_only %} eeg-btn-full-scan--unavailable{% endif %}"
+                    title="{% if gateway_only %}Full Scan is not available for gateway apps — monitor via Traces and Agents{% elif full_scan_in_progress %}Scan in progress…{% else %}Full scan: static rules, dependency vuln intel, probes, and cloud checks when applicable{% endif %}"
+                    {% if full_scan_in_progress or gateway_only %}disabled{% endif %}
+                    {% if full_scan_in_progress %}aria-busy="true"{% endif %}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Full Scan
+            </button>
+        </form>
+        {% endwith %}
+    </div>
+</div>
+
+<div id="scan-result" aria-live="polite">{% if active_full_scan %}{% include "projects/partials/scan_async_poll.html" with scan_run=active_full_scan project=project %}{% endif %}</div>
+
+<!-- Findings Summary -->
+<div class="stats-grid" style="margin-bottom: 1.5rem;">
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--accent-critical);">{{ findings_summary.critical }}</div>
+        <div class="stat-label">Critical</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--accent-danger);">{{ findings_summary.high }}</div>
+        <div class="stat-label">High</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--accent-warning);">{{ findings_summary.medium }}</div>
+        <div class="stat-label">Medium</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--accent-success);">{{ findings_summary.low }}</div>
+        <div class="stat-label">Low</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+    <!-- Project Details -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Project Details</h2>
+        </div>
+        <div style="display: grid; gap: 0.75rem;">
+            <div>
+                <label class="muted">Project ID</label>
+                <div><code style="font-size: 0.8125rem;">{{ project.uuid }}</code></div>
+            </div>
+            <div>
+                <label class="muted">Status</label>
+                <div>
+                    <span class="severity-badge severity-{% if project.status == 'active' %}low{% elif project.status == 'paused' %}medium{% else %}critical{% endif %}">
+                        {{ project.status }}
+                    </span>
+                </div>
+            </div>
+            {% if project.repository_url %}
+            <div>
+                <label class="muted">Repository</label>
+                <div><a href="{{ project.repository_url }}" target="_blank" style="color: var(--accent-primary);">{{ project.repository_url }}</a></div>
+            </div>
+            {% endif %}
+            {% if project.local_path %}
+            <div>
+                <label class="muted">Local Path</label>
+                <div><code>{{ project.local_path }}</code></div>
+            </div>
+            {% endif %}
+            {% if project.api_endpoint %}
+            <div>
+                <label class="muted">API Endpoint</label>
+                <div><code>{{ project.api_endpoint }}</code></div>
+            </div>
+            {% endif %}
+            <div>
+                <label class="muted">Auto Scan</label>
+                <div>{% if project.auto_scan_enabled %}Enabled ({{ project.scan_schedule }}){% else %}Disabled{% endif %}</div>
+            </div>
+            <div>
+                <label class="muted">Last Scan</label>
+                <div>{{ project.last_scan_at|date:"M j, Y H:i"|default:"Never" }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Scans -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Recent Scans</h2>
+        </div>
+        {% if recent_scans %}
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            {% for scan in recent_scans %}
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border-default);">
+                <div>
+                    <div style="font-size: 0.875rem;">{{ scan.get_scan_type_display }}</div>
+                    <div class="muted" style="font-size: 0.75rem;">{{ scan.created_at|date:"M j, H:i" }}</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    {% if scan.result_summary.new_findings %}
+                    <span style="font-size: 0.75rem; color: var(--accent-danger);">{{ scan.result_summary.new_findings }} new</span>
+                    {% elif scan.findings_count > 0 %}
+                    <span style="font-size: 0.75rem; color: var(--text-secondary);">{{ scan.findings_count }} open</span>
+                    {% endif %}
+                    <span class="severity-badge severity-{% if scan.status == 'completed' %}low{% elif scan.status == 'failed' %}critical{% else %}medium{% endif %}">
+                        {{ scan.status }}
+                    </span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">No scans run yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Description -->
+{% if project.description %}
+<div class="panel" style="margin-top: 1.5rem;">
+    <div class="panel-header">
+        <h2 class="panel-title">Description</h2>
+    </div>
+    <p>{{ project.description }}</p>
+</div>
+{% endif %}
+
+<!-- Danger Zone -->
+<div class="panel" style="margin-top: 1.5rem; border-color: var(--accent-danger);">
+    <div class="panel-header">
+        <h2 class="panel-title" style="color: var(--accent-danger);">Danger Zone</h2>
+    </div>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">Deleting a project removes all associated scans and findings. This action cannot be undone.</p>
+    <form action="{% url 'ui:projects:delete' project.pk %}" method="post" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this project?');">
+            Delete Project
+        </button>
+    </form>
+</div>
+{% endblock %}

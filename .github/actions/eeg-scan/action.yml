@@ -1,0 +1,43 @@
+name: EEG Scan
+description: Run EEG AI/agent security scan (same CLI as local / PyPI) and optionally emit SARIF
+inputs:
+  path:
+    description: Repository path to scan
+    required: false
+    default: "."
+  profile:
+    description: Scan profile (code, agent, full, model, dep)
+    required: false
+    default: "code"
+  fail-on:
+    description: Exit non-zero on findings at or above this severity
+    required: false
+    default: "high"
+  output:
+    description: SARIF or JSON output file path
+    required: false
+    default: "eeg-results.sarif"
+  format:
+    description: Output format (json or sarif)
+    required: false
+    default: "sarif"
+  cloud:
+    description: Optional cloud hint for full profile (aws, azure, gcp, any)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Run EEG scan
+      shell: bash
+      run: |
+        EXTRA=()
+        if [ -n "${{ inputs.cloud }}" ]; then
+          EXTRA+=(--cloud "${{ inputs.cloud }}")
+        fi
+        python -m eeg scan "${{ inputs.path }}" \
+          --profile "${{ inputs.profile }}" \
+          --format "${{ inputs.format }}" \
+          --output "${{ inputs.output }}" \
+          --fail-on "${{ inputs.fail-on }}" \
+          "${EXTRA[@]}"

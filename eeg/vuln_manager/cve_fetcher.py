@@ -1,14 +1,14 @@
 """
 EEG - CVE Fetcher
-Queries the NVD (National Vulnerability Database) REST API for AI-specific CVEs
-and returns findings for detected dependencies.
+Queries the NVD (National Vulnerability Database) REST API for dependency CVEs.
 """
 
 import time
 import requests
-from typing import List, Dict, Optional
+from typing import Callable, List, Dict, Optional
 
 from eeg.collector import Finding, Severity
+from eeg.vuln_manager.dependency_parser import AI_PACKAGE_REGISTRY, ParsedDependency
 
 NVD_API_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 REQUEST_DELAY = 6  # NVD rate limit: 5 requests per 30 seconds without API key
@@ -21,12 +21,8 @@ CVSS_TO_SEVERITY = {
     "LOW": Severity.LOW,
 }
 
-# Import the registry to resolve keywords
-from eeg.vuln_manager.dependency_parser import AI_PACKAGE_REGISTRY
-
-
 class CVEFetcher:
-    """Fetch CVEs from NVD for AI-specific packages."""
+    """Fetch CVEs from NVD for project dependencies."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
@@ -37,20 +33,39 @@ class CVEFetcher:
         if api_key:
             self.session.headers["apiKey"] = api_key
 
-    def fetch_all(self, ai_deps: Dict[str, str], cloud_env: str) -> List[Finding]:
-        """Fetch CVEs for all detected AI dependencies."""
-        findings = []
-        for pkg_name, version in ai_deps.items():
-            keyword = AI_PACKAGE_REGISTRY.get(pkg_name, pkg_name)
-            print(f"    [CVE] Querying NVD for: {keyword} (pkg: {pkg_name})")
+    def fetch_all(self, deps: Dict[str, str], cloud_env: str) -> List[Finding]:
+        """Fetch CVEs for a name→version map (legacy helper)."""
+        parsed = [
+            ParsedDependency(name=k, version=v, ecosystem="pip", source_file="")
+            for k, v in deps.items()
+        ]
+        return self.fetch_for_dependencies(parsed, cloud_env)
+
+    def fetch_for_dependencies(
+        self,
+        deps: List[ParsedDependency],
+        cloud_env: str,
+        *,
+        should_cancel: Optional[Callable[[], bool]] = None,
+    ) -> List[Finding]:
+        """Fetch NVD CVEs for every declared dependency."""
+        findings: List[Finding] = []
+        for dep in deps:
+            if should_cancel and should_cancel():
+                break
+            normalized = dep.name.lower().replace("_", "-")
+            keyword = AI_PACKAGE_REGISTRY.get(normalized, dep.name)
+            print(f"    [NVD] Querying for: {keyword} ({dep.ecosystem}:{dep.name}@{dep.version})")
             try:
                 cves = self._query_nvd(keyword)
                 for cve in cves:
-                    finding = self._cve_to_finding(cve, pkg_name, version, cloud_env)
+                    finding = self._cve_to_finding(
+                        cve, dep.name, dep.version, cloud_env
+                    )
                     if finding:
                         findings.append(finding)
             except Exception as e:
-                print(f"    [CVE] Error fetching CVEs for {keyword}: {e}")
+                print(f"    [NVD] Error fetching CVEs for {keyword}: {e}")
             time.sleep(REQUEST_DELAY)
         return findings
 

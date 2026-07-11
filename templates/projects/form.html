@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}{% if is_create %}Add Project{% else %}Edit {{ project.name }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">{% if is_create %}Add Project{% else %}Edit Project{% endif %}</h1>
+</div>
+
+{% if is_create %}
+<p class="muted projects-usage-meta">
+    Choose <strong>Static security</strong> for code repositories and local apps (Full Scan).
+    Choose <strong>Runtime (gateway)</strong> only if you are wiring a connected agent — gateway apps also appear automatically when they connect.
+    To scan code for a gateway app, add a separate static project.
+</p>
+{% endif %}
+
+<div class="panel">
+    <form method="post">
+        {% csrf_token %}
+        
+        {% if form.non_field_errors %}
+        <div class="alert alert-error">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+        
+        <div class="form-group">
+            <label for="id_name">Project Name *</label>
+            <input type="text" name="name" id="id_name" class="eeg-input" value="{{ form.name.value|default:'' }}" required>
+            {{ form.name.errors }}
+        </div>
+        
+        <div class="form-group">
+            <label for="id_description">Description</label>
+            <textarea name="description" id="id_description" class="eeg-input" rows="3">{{ form.description.value|default:'' }}</textarea>
+        </div>
+        
+        {% if is_create %}
+        <div class="form-group">
+            <label for="id_security_mode">Security mode *</label>
+            <select id="id_security_mode" class="eeg-input" aria-label="Static or runtime security mode">
+                <option value="static" selected>Static security (code scan)</option>
+                <option value="runtime">Runtime security (gateway / dynamic)</option>
+            </select>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Runtime projects disable Full Scan. Gateway traffic attaches findings to the matching gateway project.
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="form-group" id="project-type-static-wrap">
+            <label for="id_project_type">Project Type *</label>
+            <select name="project_type" id="id_project_type" class="eeg-input">
+                {% for value, label in form.fields.project_type.choices %}
+                <option value="{{ value }}" {% if form.project_type.value == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        {% if is_create %}
+        <div class="form-group" id="project-type-runtime-wrap" hidden>
+            <label>Runtime project type</label>
+            <input type="text" class="eeg-input" value="Gateway App" disabled>
+            <input type="hidden" name="project_type" id="id_project_type_runtime" value="gateway" disabled>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Prefer connecting the agent via the gateway — it will create this project automatically.
+                Manual runtime projects need a gateway agent key after create (Agents page).
+            </div>
+        </div>
+        {% endif %}
+        
+        <div id="static-fields">
+        <div class="form-group">
+            <label for="id_repository_url">Repository URL</label>
+            <input type="url" name="repository_url" id="id_repository_url" class="eeg-input" value="{{ form.repository_url.value|default:'' }}" placeholder="https://github.com/...">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">GitHub, GitLab, or other git repository URL</div>
+        </div>
+        
+        <div class="form-group">
+            <label for="id_local_path">Local Path</label>
+            <input type="text" name="local_path" id="id_local_path" class="eeg-input" value="{{ form.local_path.value|default:'' }}" placeholder="fixtures/vulnerable-apps/ai-goat">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Path relative to the app root, absolute path, or file:// URL. Large repos copy in the background after create.</div>
+        </div>
+        
+        <div class="form-group">
+            <label for="id_api_endpoint">API Endpoint</label>
+            <input type="url" name="api_endpoint" id="id_api_endpoint" class="eeg-input" value="{{ form.api_endpoint.value|default:'' }}" placeholder="https://api.example.com/v1">
+        </div>
+        
+        <div class="form-group">
+            <label for="id_cloud_resource_id">Cloud Resource ID</label>
+            <input type="text" name="cloud_resource_id" id="id_cloud_resource_id" class="eeg-input" value="{{ form.cloud_resource_id.value|default:'' }}" placeholder="arn:aws:... or projects/...">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">AWS ARN, GCP resource path, or Azure resource ID</div>
+        </div>
+        
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer;">
+                <input type="checkbox" name="auto_scan_enabled" class="toggle-switch" {% if form.auto_scan_enabled.value %}checked{% endif %}>
+                <span>Enable automatic scanning</span>
+            </label>
+        </div>
+        
+        <div class="form-group">
+            <label for="id_scan_schedule">Scan Schedule (cron)</label>
+            <input type="text" name="scan_schedule" id="id_scan_schedule" class="eeg-input" value="{{ form.scan_schedule.value|default:'0 */6 * * *' }}">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Default: every 6 hours</div>
+        </div>
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+            <button type="submit" id="project-form-submit" class="btn btn-primary">{% if is_create %}Create Project{% else %}Save Changes{% endif %}</button>
+            <a href="{% if is_create %}{% url 'ui:projects:list' %}{% else %}{% url 'ui:projects:detail' project.pk %}{% endif %}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.querySelector(".panel form[method='post']");
+    var btn = document.getElementById("project-form-submit");
+    var mode = document.getElementById("id_security_mode");
+    var staticWrap = document.getElementById("project-type-static-wrap");
+    var runtimeWrap = document.getElementById("project-type-runtime-wrap");
+    var staticFields = document.getElementById("static-fields");
+    var typeSelect = document.getElementById("id_project_type");
+    var typeRuntime = document.getElementById("id_project_type_runtime");
+
+    function syncMode() {
+        if (!mode) return;
+        var runtime = mode.value === "runtime";
+        if (staticWrap) staticWrap.hidden = runtime;
+        if (runtimeWrap) runtimeWrap.hidden = !runtime;
+        if (staticFields) staticFields.hidden = runtime;
+        if (typeSelect) typeSelect.disabled = runtime;
+        if (typeRuntime) typeRuntime.disabled = !runtime;
+        if (runtime && typeRuntime) {
+            typeRuntime.disabled = false;
+        }
+    }
+    if (mode) {
+        mode.addEventListener("change", syncMode);
+        syncMode();
+    }
+    if (!form || !btn) return;
+    form.addEventListener("submit", function () {
+        btn.disabled = true;
+        btn.textContent = "Creating…";
+    });
+})();
+</script>
+{% endblock %}

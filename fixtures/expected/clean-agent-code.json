@@ -1,0 +1,10 @@
+{
+  "profile": "code",
+  "max_findings": 0,
+  "forbidden_rule_substrings": [
+    "hardcoded",
+    "exec",
+    "credential",
+    "injection"
+  ]
+}

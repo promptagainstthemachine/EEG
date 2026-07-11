@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Threat Intel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .threat-intel-feed-wrap {
+        max-height: calc(100vh - 220px);
+        overflow-y: auto;
+        padding-right: 0.25rem;
+    }
+
+    .refresh-feed-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 7.5rem;
+        min-height: 2.25rem;
+    }
+
+    .refresh-feed-btn__content {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .refresh-feed-btn__busy {
+        display: none;
+    }
+
+    .refresh-feed-btn.is-fetching,
+    form.eeg-threat-intel-refresh.htmx-request .refresh-feed-btn,
+    #refresh-cve-btn.htmx-request {
+        opacity: 1;
+        pointer-events: none;
+    }
+
+    .refresh-feed-btn.is-fetching .refresh-feed-btn__idle,
+    form.eeg-threat-intel-refresh.htmx-request .refresh-feed-btn__idle,
+    #refresh-cve-btn.htmx-request .refresh-feed-btn__idle {
+        display: none;
+    }
+
+    .refresh-feed-btn.is-fetching .refresh-feed-btn__busy,
+    form.eeg-threat-intel-refresh.htmx-request .refresh-feed-btn__busy,
+    #refresh-cve-btn.htmx-request .refresh-feed-btn__busy {
+        display: inline-flex;
+    }
+
+    .threat-intel-feed-wrap.is-fetching-cve {
+        position: relative;
+        min-height: 8rem;
+    }
+
+    .threat-intel-cve-loading {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+        padding: 2rem 1rem;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .threat-intel-feed-wrap.is-fetching-cve .threat-intel-cve-loading {
+        display: flex;
+    }
+
+    .threat-intel-feed-wrap.is-fetching-cve .threat-intel-feed-content {
+        opacity: 0.35;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Threat Intel</h1>
+    <div class="page-header-actions">
+        {% if dashboard_projects %}
+        {% include "ui/partials/dashboard_project_selector.html" %}
+        {% endif %}
+        <form id="threat-intel-refresh-form"
+              class="eeg-scan-form eeg-threat-intel-refresh"
+              style="margin:0;"
+              hx-post="{% url 'ui:refresh_threat_intel' %}{% if active_project %}?project={{ active_project.pk }}{% endif %}"
+              hx-target=".threat-intel-feed-content"
+              hx-swap="innerHTML"
+              hx-indicator="#refresh-cve-btn, #vuln-feed-inner">
+            {% csrf_token %}
+            <button type="submit"
+                    id="refresh-cve-btn"
+                    class="btn btn-secondary refresh-feed-btn"
+                    {% if not active_project %}disabled title="Select a project first"{% endif %}>
+                <span class="refresh-feed-btn__content refresh-feed-btn__idle">Refresh CVEs</span>
+                <span class="refresh-feed-btn__content refresh-feed-btn__busy" hidden>
+                    <span class="loading-spinner" style="width:14px;height:14px;border-width:2px;"></span>
+                    Fetching CVE…
+                </span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="panel">
+    <div id="vuln-feed-inner" class="threat-intel-feed-wrap">
+        <div class="threat-intel-cve-loading" id="threat-intel-cve-loading" aria-live="polite" hidden>
+            <span class="loading-spinner" style="width:18px;height:18px;border-width:2px;"></span>
+            <span>Fetching CVE…</span>
+        </div>
+        <div class="threat-intel-feed-content">
+            {% if active_refresh_scan %}
+            {% include "ui/partials/threat_intel_refresh_poll.html" with scan_run_id=active_refresh_scan.pk active_project=active_project %}
+            {% else %}
+            {% include "ui/partials/vuln_feed.html" with vulns=vulns has_projects=has_projects %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var STORAGE_KEY = "eeg_threat_intel_fetching";
+    var STORAGE_TS = "eeg_threat_intel_fetching_ts";
+    var MAX_AGE_MS = 15 * 60 * 1000;
+
+    function isRefreshRequest(evt) {
+        var path = (evt.detail.pathInfo && evt.detail.pathInfo.requestPath) || "";
+        return path.indexOf("threat-intel/refresh") !== -1;
+    }
+
+    function btn() { return document.getElementById("refresh-cve-btn"); }
+    function feedWrap() { return document.getElementById("vuln-feed-inner"); }
+    function loadingBanner() { return document.getElementById("threat-intel-cve-loading"); }
+
+    function setFetching(on) {
+        var b = btn();
+        var wrap = feedWrap();
+        var banner = loadingBanner();
+        if (b) {
+            b.classList.toggle("is-fetching", on);
+            if (!b.hasAttribute("data-disabled-no-project")) {
+                b.disabled = on;
+            }
+            var busy = b.querySelector(".refresh-feed-btn__busy");
+            var idle = b.querySelector(".refresh-feed-btn__idle");
+            if (busy) busy.hidden = !on;
+            if (idle) idle.hidden = on;
+        }
+        if (wrap) wrap.classList.toggle("is-fetching-cve", on);
+        if (banner) banner.hidden = !on;
+    }
+
+    function markFetchingStarted() {
+        try {
+            sessionStorage.setItem(STORAGE_KEY, "1");
+            sessionStorage.setItem(STORAGE_TS, String(Date.now()));
+        } catch (e) {}
+        setFetching(true);
+    }
+
+    function markFetchingDone() {
+        try {
+            sessionStorage.removeItem(STORAGE_KEY);
+            sessionStorage.removeItem(STORAGE_TS);
+        } catch (e) {}
+        setFetching(false);
+    }
+
+    function init() {
+        var b = btn();
+        if (b && b.disabled && b.title) {
+            b.setAttribute("data-disabled-no-project", "1");
+        }
+        var poll = document.getElementById("threat-intel-refresh-poll");
+        if (poll) {
+            markFetchingStarted();
+        } else {
+            markFetchingDone();
+        }
+        if (b) {
+            b.addEventListener("click", function () {
+                if (!b.disabled) markFetchingStarted();
+            });
+        }
+        var form = document.getElementById("threat-intel-refresh-form");
+        if (form) {
+            form.addEventListener("submit", function () { markFetchingStarted(); });
+        }
+    }
+
+    document.body.addEventListener("htmx:beforeRequest", function (evt) {
+        if (isRefreshRequest(evt)) markFetchingStarted();
+    });
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (isRefreshRequest(evt)) {
+            var poll = document.getElementById("threat-intel-refresh-poll");
+            if (!poll) markFetchingDone();
+        }
+    });
+    document.body.addEventListener("htmx:responseError", function (evt) {
+        if (isRefreshRequest(evt)) markFetchingDone();
+    });
+    document.body.addEventListener("threatIntelRefreshDone", markFetchingDone);
+    document.body.addEventListener("threatIntelRefreshStarted", markFetchingStarted);
+
+    document.body.addEventListener("htmx:afterOnLoad", function (evt) {
+        var xhr = evt.detail.xhr;
+        if (!xhr) return;
+        var path = xhr.responseURL || "";
+        if (path.indexOf("threat-intel/status") === -1) return;
+        var trigger = xhr.getResponseHeader("HX-Trigger") || "";
+        if (trigger.indexOf("threatIntelRefreshDone") !== -1) markFetchingDone();
+    });
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+    } else {
+        init();
+    }
+})();
+</script>
+{% endblock %}

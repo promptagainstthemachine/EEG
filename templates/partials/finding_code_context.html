@@ -1,0 +1,58 @@
+{% if code_context.workflow_lines %}
+<div class="finding-workflow" style="margin-top: 0.75rem;">
+    <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 0.5rem;">
+        {% if code_context.has_full_workflow %}Source context{% else %}Matched code{% endif %}
+        {% if code_context.file_path %}
+        <span style="font-weight: 400; text-transform: none; letter-spacing: 0;"> · {{ code_context.file_path }}{% if code_context.line_number %}:{{ code_context.line_number }}{% endif %}</span>
+        {% endif %}
+    </div>
+    <pre class="finding-workflow-pre" style="margin: 0; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border-muted); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.75rem; line-height: 1.5; max-height: 420px; overflow: auto;"><code>{% for row in code_context.workflow_lines %}<span class="wf-line{% if row.highlight %} wf-line--hit{% endif %}"><span class="wf-gutter">{{ row.number|stringformat:"4s" }}</span>{{ row.text }}
+</span>{% endfor %}</code></pre>
+</div>
+{% endif %}
+
+{% if code_context.has_matched_snippet %}
+<div class="finding-workflow" style="margin-top: 0.75rem;">
+    <div style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 0.5rem;">
+        Matched at scan
+        {% if code_context.file_path %}
+        <span style="font-weight: 400; text-transform: none; letter-spacing: 0;"> · {{ code_context.file_path }}{% if code_context.line_number %}:{{ code_context.line_number }}{% endif %}</span>
+        {% endif %}
+    </div>
+    <pre class="finding-workflow-pre" style="margin: 0; padding: 0.75rem; background: var(--bg-primary); border: 1px solid var(--border-muted); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.75rem; line-height: 1.5; max-height: 240px; overflow: auto;"><code>{% for row in code_context.matched_lines %}<span class="wf-line{% if row.highlight %} wf-line--hit{% endif %}"><span class="wf-gutter">{{ row.number|stringformat:"4s" }}</span>{{ row.text }}
+</span>{% endfor %}</code></pre>
+</div>
+{% endif %}
+
+{% if code_context.workflow_steps %}
+<ol class="finding-workflow-steps" style="margin: 0.75rem 0 0; padding-left: 1.25rem; font-size: 0.8125rem; color: var(--text-secondary);">
+    {% for step in code_context.workflow_steps %}
+    <li style="margin-bottom: 0.35rem;">{{ step }}</li>
+    {% endfor %}
+</ol>
+{% endif %}
+
+{% if code_context.needs_source_sync %}
+<p class="muted finding-source-hint" style="margin-top:0.75rem;font-size:0.8125rem;">
+    Full file context is not on disk for this project. Sync the repository (project settings → repository URL or local path) and re-run a scan to load surrounding lines.
+</p>
+{% elif not code_context.has_workflow %}
+<p class="muted" style="margin-top:0.5rem;font-size:0.8125rem;">No code context was captured for this finding.</p>
+{% endif %}
+
+<style>
+.finding-workflow-pre .wf-line { display: block; white-space: pre-wrap; word-break: break-word; }
+.finding-workflow-pre .wf-gutter {
+    display: inline-block;
+    width: 3.25rem;
+    margin-right: 0.75rem;
+    color: var(--text-muted);
+    user-select: none;
+}
+.finding-workflow-pre .wf-line--hit {
+    background: rgba(88, 166, 255, 0.12);
+    border-left: 3px solid var(--accent-primary);
+    padding-left: 0.35rem;
+    margin-left: -0.35rem;
+}
+</style>

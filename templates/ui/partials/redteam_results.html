@@ -1,0 +1,37 @@
+<div class="panel" style="margin-top: 1rem;">
+    <div class="panel-header">
+        <h3 class="panel-title">Red Team Results</h3>
+    </div>
+    
+    {% if probe_result %}
+    <div style="margin-bottom: 1rem;">
+        <span class="severity-badge severity-{% if probe_result.success %}low{% else %}high{% endif %}">
+            {% if probe_result.success %}Completed{% else %}Failed{% endif %}
+        </span>
+    </div>
+    
+    {% if probe_result.posture_state %}
+    <p class="muted" style="margin-bottom: 0.75rem;">Posture: <strong>{{ probe_result.posture_state }}</strong>
+        {% if probe_result.metadata.total_probes %} — {{ probe_result.metadata.blocked_count }}/{{ probe_result.metadata.total_probes }} blocked{% endif %}
+    </p>
+    {% endif %}
+
+    {% if probe_result.probes %}
+    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+        {% for probe in probe_result.probes %}
+        <div style="padding: 0.75rem; background: var(--bg-primary); border-radius: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <strong>{{ probe.category }}</strong>
+                <span class="severity-badge severity-{% if probe.blocked %}low{% else %}critical{% endif %}">
+                    {% if probe.blocked %}Blocked{% else %}Bypassed{% endif %}
+                </span>
+            </div>
+            <div class="muted" style="font-size: 0.875rem;">{{ probe.description|truncatechars:100 }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <p class="muted">No probe results available.</p>
+    {% endif %}
+</div>

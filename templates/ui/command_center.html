@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Security Command Center{% endblock %}
+
+{% block extra_css %}
+<style>
+    .cc-grid {
+        display: grid;
+        grid-template-columns: minmax(240px, 300px) 1fr;
+        gap: 1.5rem;
+        align-items: start;
+    }
+    @media (max-width: 960px) {
+        .cc-grid { grid-template-columns: 1fr; }
+    }
+    .score-card {
+        background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+        border-radius: 12px;
+        padding: 1.5rem 1.25rem;
+        text-align: center;
+        border: 1px solid var(--border-default);
+    }
+    .score-value {
+        font-size: 3rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .score-label {
+        color: var(--text-secondary);
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
+    }
+    .scan-under-score {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-default);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        text-align: center;
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+    }
+    .scan-under-score > div strong {
+        display: block;
+        font-size: 1.15rem;
+        color: var(--text-primary);
+        margin-top: 0.2rem;
+        font-weight: 600;
+    }
+    .severity-bar {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+    }
+    .severity-label {
+        width: 80px;
+        font-size: 0.875rem;
+    }
+    .severity-track {
+        flex: 1;
+        height: 24px;
+        background: var(--bg-primary);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .severity-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+    .severity-count {
+        width: 40px;
+        text-align: right;
+        font-weight: 600;
+    }
+    .findings-h-scroll-wrap {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 0.35rem;
+    }
+    .findings-h-scroll-inner {
+        display: flex;
+        flex-direction: row;
+        gap: 0.75rem;
+        min-height: 120px;
+        align-items: stretch;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Security Command Center</h1>
+    <a href="{% url 'ui:projects:list' %}" class="btn btn-primary">Open projects → Full Scan</a>
+</div>
+
+<div id="scan-status"></div>
+
+<div class="cc-grid">
+    <aside class="cc-left" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div class="score-card">
+            <div class="score-value" style="color: {% if security_score >= 80 %}var(--accent-success){% elif security_score >= 50 %}var(--accent-warning){% else %}var(--accent-danger){% endif %};">
+                {{ security_score }}
+            </div>
+            <div class="score-label">Security Score</div>
+            <div class="scan-under-score">
+                <div>Last scan<strong>{{ last_scan_time }}</strong></div>
+                <div>Active scans<strong>{{ active_scans }}</strong></div>
+                <div style="grid-column: 1 / -1;">Scans (24h)<strong>{{ total_scans_24h }}</strong></div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="cc-right">
+        <div class="panel" style="margin:0;">
+            <div class="panel-header">
+                <h2 class="panel-title">Findings by severity</h2>
+            </div>
+            <div class="severity-bar">
+                <div class="severity-label" style="color: var(--accent-critical);">Critical</div>
+                <div class="severity-track">
+                    <div class="severity-fill" style="width: {{ critical_pct }}%; background: var(--accent-critical);"></div>
+                </div>
+                <div class="severity-count">{{ critical_count }}</div>
+            </div>
+            <div class="severity-bar">
+                <div class="severity-label" style="color: var(--accent-danger);">High</div>
+                <div class="severity-track">
+                    <div class="severity-fill" style="width: {{ high_pct }}%; background: var(--accent-danger);"></div>
+                </div>
+                <div class="severity-count">{{ high_count }}</div>
+            </div>
+            <div class="severity-bar">
+                <div class="severity-label" style="color: var(--accent-warning);">Medium</div>
+                <div class="severity-track">
+                    <div class="severity-fill" style="width: {{ medium_pct }}%; background: var(--accent-warning);"></div>
+                </div>
+                <div class="severity-count">{{ medium_count }}</div>
+            </div>
+            <div class="severity-bar">
+                <div class="severity-label" style="color: var(--accent-success);">Low</div>
+                <div class="severity-track">
+                    <div class="severity-fill" style="width: {{ low_pct }}%; background: var(--accent-success);"></div>
+                </div>
+                <div class="severity-count">{{ low_count }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="panel" style="margin-top: 1.5rem;">
+    <div class="panel-header">
+        <h2 class="panel-title">Recent findings</h2>
+        <a href="{% url 'ui:findings_explorer' %}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">View all</a>
+    </div>
+    <div class="findings-h-scroll-wrap">
+        <div class="findings-h-scroll-inner"
+             hx-get="{% url 'ui:findings_feed' %}?layout=horizontal"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <p class="muted" style="align-self:center;">Loading…</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

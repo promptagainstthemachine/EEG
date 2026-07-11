@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+{% block title %}AI Traces{% endblock %}
+
+{% block extra_css %}
+<style>
+    .traces-page {
+        max-width: 100%;
+        min-width: 0;
+    }
+    .traces-page .page-header {
+        margin-bottom: 1.25rem;
+        align-items: flex-start;
+    }
+    .traces-page .page-header__count {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--border-default);
+        border-radius: 999px;
+        background: var(--bg-secondary);
+        white-space: nowrap;
+    }
+
+    .traces-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 0.85rem;
+    }
+    .traces-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-default);
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .traces-filter:hover {
+        color: var(--text-primary);
+        border-color: var(--text-muted);
+    }
+    .traces-filter.is-active {
+        color: var(--text-primary);
+        background: var(--bg-tertiary);
+        border-color: var(--text-muted);
+    }
+    .traces-filter.is-empty { opacity: 0.45; }
+    .traces-filter__count {
+        font-variant-numeric: tabular-nums;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        background: rgba(230, 237, 243, 0.06);
+        border-radius: 999px;
+        padding: 0.05rem 0.45rem;
+        min-width: 1.4rem;
+        text-align: center;
+    }
+    .traces-filter.is-active .traces-filter__count {
+        color: var(--text-primary);
+        background: rgba(230, 237, 243, 0.1);
+    }
+    .traces-filter__dot {
+        width: 0.45rem;
+        height: 0.45rem;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: var(--text-muted);
+    }
+    .traces-filter__dot--prompt { background: #3fb950; }
+    .traces-filter__dot--tool { background: #d29922; }
+    .traces-filter__dot--rag { background: #a371f7; }
+    .traces-filter__dot--mcp { background: #58a6ff; }
+    .traces-filter__dot--control { background: #f85149; }
+    .traces-filter__dot--embed { background: #8b949e; }
+    .traces-filter__dot--all { background: var(--text-secondary); }
+
+    .verdict-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.65rem;
+        margin-bottom: 1.15rem;
+        padding: 0.75rem 0.9rem;
+        border: 1px solid var(--border-default);
+        border-radius: 10px;
+        background: var(--bg-secondary);
+    }
+    .verdict-bar__label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-right: 0.25rem;
+    }
+    .verdict-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-default);
+        text-decoration: none;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        background: transparent;
+    }
+    .verdict-chip:hover { color: var(--text-primary); }
+    .verdict-chip.is-active {
+        color: var(--text-primary);
+        background: var(--bg-tertiary);
+        border-color: var(--text-muted);
+    }
+    .verdict-chip--blocked.is-active {
+        color: #ffb4ad;
+        background: rgba(248, 81, 73, 0.12);
+        border-color: rgba(248, 81, 73, 0.45);
+    }
+    .verdict-chip--accepted.is-active {
+        color: #7ee787;
+        background: rgba(63, 185, 80, 0.12);
+        border-color: rgba(63, 185, 80, 0.45);
+    }
+    .verdict-chip__n {
+        font-variant-numeric: tabular-nums;
+        font-size: 0.75rem;
+        opacity: 0.85;
+    }
+
+    .traces-panel { overflow: hidden; padding: 0; }
+    .traces-panel .panel-header {
+        padding: 0.9rem 1.1rem;
+        border-bottom: 1px solid var(--border-default);
+        margin: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .table-scroll {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .traces-table {
+        width: 100%;
+        min-width: 54rem;
+        table-layout: fixed;
+        border-collapse: collapse;
+    }
+    .traces-table th,
+    .traces-table td {
+        padding: 0.85rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border-default);
+        vertical-align: top;
+    }
+    .traces-table th {
+        color: var(--text-muted);
+        font-weight: 500;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        background: rgba(22, 27, 34, 0.85);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+    .traces-table tbody tr:last-child td { border-bottom: none; }
+    .traces-table tbody tr:hover td { background: rgba(230, 237, 243, 0.03); }
+    .traces-table tr.is-blocked td {
+        background: rgba(248, 81, 73, 0.045);
+    }
+    .traces-table tr.is-blocked:hover td {
+        background: rgba(248, 81, 73, 0.08);
+    }
+    .traces-table th:nth-child(1),
+    .traces-table td:nth-child(1) { width: 7.5rem; }
+    .traces-table th:nth-child(3),
+    .traces-table td:nth-child(3) { width: 7.5rem; }
+    .traces-table th:nth-child(4),
+    .traces-table td:nth-child(4) { width: 7rem; }
+    .traces-table th:nth-child(5),
+    .traces-table td:nth-child(5) { width: 5rem; }
+    .traces-table th:nth-child(6),
+    .traces-table td:nth-child(6) { width: 6rem; }
+    .traces-table th:nth-child(7),
+    .traces-table td:nth-child(7) { width: 7rem; }
+
+    .verdict-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.22rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+    }
+    .verdict-pill--blocked {
+        color: #ffb4ad;
+        background: rgba(248, 81, 73, 0.14);
+        border-color: rgba(248, 81, 73, 0.35);
+    }
+    .verdict-pill--accepted {
+        color: #7ee787;
+        background: rgba(63, 185, 80, 0.12);
+        border-color: rgba(63, 185, 80, 0.3);
+    }
+    .verdict-pill::before {
+        content: "";
+        width: 0.35rem;
+        height: 0.35rem;
+        border-radius: 50%;
+        background: currentColor;
+    }
+
+    .surface-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        padding: 0.2rem 0.55rem 0.2rem 0.4rem;
+        border-radius: 999px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-default);
+    }
+    .surface-pill__dot {
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: var(--text-muted);
+    }
+    .surface-pill--prompt .surface-pill__dot { background: #3fb950; }
+    .surface-pill--tool .surface-pill__dot { background: #d29922; }
+    .surface-pill--rag .surface-pill__dot { background: #a371f7; }
+    .surface-pill--mcp .surface-pill__dot { background: #58a6ff; }
+    .surface-pill--control .surface-pill__dot { background: #f85149; }
+    .surface-pill--embed .surface-pill__dot { background: #8b949e; }
+
+    .trace-main { min-width: 0; }
+    .trace-main__id {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+    }
+    .trace-main__preview {
+        margin-top: 0.3rem;
+        font-size: 0.8125rem;
+        color: var(--text-primary);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-clamp: 2;
+        overflow: hidden;
+        line-height: 1.4;
+        word-break: break-word;
+    }
+    .trace-main__reason {
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: #ffb4ad;
+    }
+    .trace-mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+
+    .risk-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        min-width: 0;
+    }
+    .risk-cell__val {
+        font-variant-numeric: tabular-nums;
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+    }
+    .risk-cell__val.is-high { color: #f85149; }
+    .risk-cell__bar {
+        height: 3px;
+        border-radius: 999px;
+        background: var(--bg-tertiary);
+        overflow: hidden;
+    }
+    .risk-cell__fill {
+        height: 100%;
+        border-radius: 999px;
+        background: var(--text-muted);
+    }
+    .risk-cell__fill.is-med { background: #d29922; }
+    .risk-cell__fill.is-high { background: #f85149; }
+
+    .traces-empty {
+        padding: 3rem 1.5rem;
+        text-align: center;
+        color: var(--text-muted);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="traces-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Traces</h1>
+        </div>
+        <span class="page-header__count">{{ traces|length }} shown</span>
+    </div>
+
+    <div class="traces-filters" role="tablist" aria-label="Trace surface">
+        {% for chip in surface_chips %}
+        <a class="traces-filter {% if type_filter == chip.value %}is-active{% endif %} {% if chip.count == 0 and chip.value %}is-empty{% endif %}"
+           href="{{ chip.href }}"
+           role="tab"
+           aria-selected="{% if type_filter == chip.value %}true{% else %}false{% endif %}">
+            <span class="traces-filter__dot traces-filter__dot--{{ chip.tone }}" aria-hidden="true"></span>
+            <span>{{ chip.label }}</span>
+            <span class="traces-filter__count">{{ chip.count }}</span>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if show_verdict_filters %}
+    <div class="verdict-bar" role="tablist" aria-label="Prompt verdict">
+        <span class="verdict-bar__label">Verdict</span>
+        <a class="verdict-chip {% if not verdict_filter %}is-active{% endif %}" href="{{ prompt_all_href }}">
+            All prompts <span class="verdict-chip__n">{{ verdict_summary.total }}</span>
+        </a>
+        <a class="verdict-chip verdict-chip--blocked {% if verdict_filter == 'blocked' %}is-active{% endif %}" href="{{ prompt_blocked_href }}">
+            Blocked <span class="verdict-chip__n">{{ verdict_summary.blocked }}</span>
+        </a>
+        <a class="verdict-chip verdict-chip--accepted {% if verdict_filter == 'accepted' %}is-active{% endif %}" href="{{ prompt_accepted_href }}">
+            Accepted <span class="verdict-chip__n">{{ verdict_summary.accepted }}</span>
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="panel traces-panel">
+        <div class="panel-header">
+            <h2 class="panel-title">
+                {% if type_filter == "llm_call" %}
+                    {% if verdict_filter == "blocked" %}Blocked prompts
+                    {% elif verdict_filter == "accepted" %}Accepted prompts
+                    {% else %}Prompt activity{% endif %}
+                {% elif type_filter %}{{ active_label }} activity
+                {% else %}Recent activity{% endif %}
+            </h2>
+            {% if show_verdict_filters %}
+            <span class="muted" style="font-size:0.75rem;">
+                {{ verdict_summary.blocked }} blocked · {{ verdict_summary.accepted }} accepted
+            </span>
+            {% endif %}
+        </div>
+
+        {% if traces %}
+        <div class="table-scroll">
+            <table class="traces-table">
+                <thead>
+                    <tr>
+                        <th>Verdict</th>
+                        <th>{% if type_filter == "llm_call" %}Prompt{% else %}Activity{% endif %}</th>
+                        <th>Model</th>
+                        <th>Provider</th>
+                        <th>Latency</th>
+                        <th>Risk</th>
+                        <th>When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in trace_rows %}
+                    <tr class="{% if row.verdict == 'blocked' %}is-blocked{% endif %}">
+                        <td>
+                            <span class="verdict-pill verdict-pill--{{ row.verdict }}">{{ row.verdict_label }}</span>
+                        </td>
+                        <td>
+                            <div class="trace-main">
+                                <div class="trace-main__id">{{ row.trace_short }} · {{ row.surface_label }}</div>
+                                {% if row.preview %}
+                                <div class="trace-main__preview" title="{{ row.preview }}">{{ row.preview }}</div>
+                                {% endif %}
+                                {% if row.verdict == "blocked" and row.reason %}
+                                <div class="trace-main__reason">Reason: {{ row.reason }}</div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td><span class="trace-mono" title="{{ row.model_or_tool }}">{{ row.model_or_tool }}</span></td>
+                        <td><span class="trace-mono" title="{{ row.provider }}">{{ row.provider }}</span></td>
+                        <td class="muted" style="font-variant-numeric:tabular-nums; font-size:0.8125rem;">{{ row.latency }}</td>
+                        <td>
+                            <div class="risk-cell">
+                                <span class="risk-cell__val {% if row.risk >= 0.7 %}is-high{% endif %}">{{ row.risk_display }}</span>
+                                <div class="risk-cell__bar" aria-hidden="true">
+                                    <div class="risk-cell__fill {% if row.risk >= 0.7 %}is-high{% elif row.risk >= 0.4 %}is-med{% endif %}" style="width: {{ row.risk_pct }}%;"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="muted" style="font-size:0.75rem; white-space:nowrap;">{{ row.when }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="traces-empty">
+            {% if verdict_filter == "blocked" %}
+            No blocked prompts in this window.
+            {% elif verdict_filter == "accepted" %}
+            No accepted prompts in this window.
+            {% elif type_filter %}
+            No {{ active_label|lower }} traces yet.
+            {% else %}
+            No traces yet. Gateway traffic will show up here.
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% if dashboard_projects %}
+<div class="dashboard-project-select-wrap">
+    <label for="dashboard-project-select" class="dashboard-project-select-label">Project</label>
+    <select id="dashboard-project-select"
+            class="dashboard-project-select"
+            aria-label="Select project for dashboard"
+            data-dashboard-project-select>
+        <option value="" disabled{% if not active_project %} selected{% endif %}>Select project…</option>
+        {% for p in dashboard_projects %}
+        <option value="{{ p.pk }}"{% if active_project and active_project.pk == p.pk %} selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+    </select>
+</div>
+<script>
+(function () {
+    var sel = document.querySelector("[data-dashboard-project-select]");
+    if (!sel || sel.dataset.eegDashProjInit) return;
+    sel.dataset.eegDashProjInit = "1";
+    sel.addEventListener("change", function () {
+        var id = sel.value;
+        if (!id) return;
+        window.location.href = window.location.pathname + "?project=" + encodeURIComponent(id);
+    });
+})();
+</script>
+{% endif %}

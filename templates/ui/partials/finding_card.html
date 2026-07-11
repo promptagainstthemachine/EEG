@@ -1,0 +1,46 @@
+{% with finding=row.finding code_context=row.code_context %}
+<article class="finding-card">
+    <div class="finding-card-header">
+        <div style="min-width:0;flex:1;">
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                <span class="severity-badge severity-{{ finding.severity }}">{{ finding.severity }}</span>
+                <code style="font-size:0.75rem;color:var(--text-muted);">{{ finding.rule_id }}</code>
+            </div>
+            <h3 style="font-size:0.95rem;font-weight:600;margin:0.35rem 0 0;line-height:1.35;">{{ finding.title }}</h3>
+            <div class="finding-card-meta">
+                {% if finding.file_path %}<span>{{ finding.file_path }}</span>{% endif %}
+                {% if finding.line_number %}<span> · Line {{ finding.line_number }}</span>{% endif %}
+                · {{ finding.first_seen_at|date:"M j, Y H:i" }}
+            </div>
+        </div>
+        <span class="severity-badge severity-{% if finding.status == 'open' %}high{% elif finding.status == 'resolved' %}low{% else %}medium{% endif %}" style="flex-shrink:0;">{{ finding.status }}</span>
+    </div>
+    <details class="finding-expand">
+        <summary>Show full detail &amp; code context</summary>
+        <dl class="finding-detail-grid">
+            {% if finding.category %}
+            <div class="finding-detail-row"><dt>Category</dt><dd>{{ finding.category }}</dd></div>
+            {% endif %}
+            {% if finding.cwe %}
+            <div class="finding-detail-row"><dt>CWE</dt><dd>{{ finding.cwe }}</dd></div>
+            {% endif %}
+            {% if finding.owasp_llm %}
+            <div class="finding-detail-row"><dt>OWASP</dt><dd>{{ finding.owasp_llm }}</dd></div>
+            {% endif %}
+            {% if finding.source %}
+            <div class="finding-detail-row"><dt>Source</dt><dd><code>{{ finding.source }}</code></dd></div>
+            {% endif %}
+            {% if finding.project %}
+            <div class="finding-detail-row"><dt>Project</dt><dd>{{ finding.project.name }}</dd></div>
+            {% endif %}
+        </dl>
+        {% if finding.description and finding.description != finding.title %}
+        <div class="finding-body-text">{{ finding.description }}</div>
+        {% endif %}
+        {% include "partials/finding_code_context.html" with code_context=code_context %}
+        {% if finding.recommendation %}
+        <div class="finding-body-text"><strong>Recommendation:</strong> {{ finding.recommendation }}</div>
+        {% endif %}
+    </details>
+</article>
+{% endwith %}

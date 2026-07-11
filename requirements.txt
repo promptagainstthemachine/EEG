@@ -1,4 +1,29 @@
-pyyaml>=6.0
+# EEG OSS - Open Source AI Security Platform
+# Core Django stack
+Django>=5.0,<6
+django-htmx>=1.21.0
+cryptography>=42.0.0
+gunicorn>=22.0.0
+whitenoise>=6.6.0
 requests>=2.31.0
-jinja2>=3.1.2
-rich>=13.7.0
+
+# Async & WebSocket support
+channels>=4.0.0
+channels-redis>=4.2.0
+daphne>=4.1.0
+
+# Background tasks & scheduling
+celery>=5.4.0
+django-celery-beat>=2.6.0
+redis>=5.0.0
+django-redis>=5.4.0
+
+# Cloud SDKs (optional - for cloud project scanning)
+boto3>=1.34.0
+azure-identity>=1.15.0
+azure-mgmt-cognitiveservices>=13.5.0
+google-cloud-aiplatform>=1.43.0
+
+# Utilities
+pyyaml>=6.0.1
+python-dateutil>=2.9.0

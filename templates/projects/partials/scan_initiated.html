@@ -1,0 +1,13 @@
+<div class="panel" style="border-color: var(--accent-success); margin-top: 1rem;">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-success)" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <strong style="color: var(--accent-success);">Scan Initiated</strong>
+    </div>
+    <p style="color: var(--text-secondary); margin: 0;">
+        {{ scan_run.get_scan_type_display }} scan queued successfully. 
+        <span style="color: var(--text-muted);">ID: {{ scan_run.pk }}</span>
+    </p>
+</div>

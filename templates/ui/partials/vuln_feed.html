@@ -1,0 +1,46 @@
+{% if scan_error %}
+<div class="alert alert-error" style="margin-bottom:0.75rem;font-size:0.8125rem;">{{ scan_error }}</div>
+{% elif scan_message %}
+<div class="alert alert-success" style="margin-bottom:0.75rem;font-size:0.8125rem;">{{ scan_message }}</div>
+{% endif %}
+{% if vulns %}
+{% for vuln in vulns %}
+<div class="vuln-item {{ vuln.severity }}" style="margin-bottom:0.65rem;padding-bottom:0.65rem;border-bottom:1px solid var(--border-muted);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.25rem;">
+        <span style="font-weight: 500; font-size: 0.8rem;">{{ vuln.id }}</span>
+        <span class="severity-badge severity-{{ vuln.severity }}" style="font-size: 0.6rem; padding: 0.1rem 0.35rem;">{{ vuln.severity|upper }}</span>
+    </div>
+    <p style="margin: 0; font-size: 0.75rem; color: var(--text-secondary); line-height: 1.4;">
+        {{ vuln.summary|truncatechars:100 }}
+    </p>
+    {% if vuln.package %}
+    <div style="margin-top: 0.35rem; font-size: 0.65rem; color: var(--text-muted);">
+        <code style="background: var(--bg-tertiary); padding: 0.1rem 0.3rem; border-radius: 3px;">{{ vuln.package }}</code>
+        {% if vuln.fixed_version %}
+        <span style="margin-left: 0.25rem;">→ Fix: {{ vuln.fixed_version }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    <div style="margin-top: 0.4rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.35rem;">
+        <span style="font-size: 0.6rem; color: var(--text-muted);">
+            {{ vuln.source }} • {{ vuln.published|default:"Recent" }}
+        </span>
+        {% if vuln.doc_url %}
+        <a href="{{ vuln.doc_url }}" target="_blank" rel="noopener noreferrer" class="vuln-doc-link" style="font-size:0.7rem;color:var(--accent-primary);text-decoration:none;">Documentation →</a>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% elif not has_projects %}
+<div style="padding: 1.5rem; text-align: center;">
+    <p style="margin: 0; font-size: 0.875rem; color: var(--text-secondary);">Threat intelligence is off</p>
+    <p class="muted" style="font-size: 0.75rem; margin-top: 0.35rem;">NVD and GitHub GHSA advisories for your project dependencies appear here after scans.</p>
+</div>
+{% else %}
+<div style="padding: 1.5rem; text-align: center;">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent-success)" stroke-width="2" style="margin-bottom: 0.5rem;">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+    <p style="margin: 0; color: var(--accent-success); font-size: 0.875rem;">No active vulnerabilities</p>
+</div>
+{% endif %}

@@ -75,6 +75,23 @@ class ConfigLoader:
         return current
 
     @staticmethod
+    def get_check(cloud: str, check_id: str) -> Optional[Dict[str, Any]]:
+        """Get a dynamic check definition by cloud and check ID."""
+        config = ConfigLoader.load(f"{cloud}_dynamic")
+        for check in config.get("checks", []):
+            if check.get("id") == check_id:
+                return check
+        return None
+
+    @staticmethod
+    def is_check_enabled(cloud: str, check_id: str) -> bool:
+        """Return whether a dynamic check is enabled in config."""
+        check = ConfigLoader.get_check(cloud, check_id)
+        if check is None:
+            return True
+        return bool(check.get("enabled", True))
+
+    @staticmethod
     def clear_cache():
         """Clear the config cache (useful for testing)."""
         global _cache, _thresholds

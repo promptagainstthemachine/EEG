@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Agents{% endblock %}
+
+{% block extra_css %}
+<style>
+.agents-page {
+    min-width: 0;
+    max-width: min(100%, 920px);
+}
+
+.agents-page .page-header {
+    margin-bottom: 1.25rem;
+}
+
+.agents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.agent-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.85rem 1rem;
+    align-items: center;
+    padding: 0.95rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+}
+
+.agent-row__main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.agent-row__title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.agent-row__name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.25;
+}
+
+.agent-row__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.85rem;
+    align-items: center;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.agent-row__key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted, #8b949e);
+    background: transparent;
+    padding: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+
+.agent-status__dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.agent-status--running {
+    color: #3fb950;
+    background: rgba(63, 185, 80, 0.12);
+    border-color: rgba(63, 185, 80, 0.35);
+}
+.agent-status--running .agent-status__dot {
+    background: #3fb950;
+    box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.2);
+}
+
+.agent-status--idle {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary, #21262d);
+    border-color: var(--border-default);
+}
+.agent-status--idle .agent-status__dot { background: #6e7681; }
+
+.agent-status--paused {
+    color: #d29922;
+    background: rgba(210, 153, 34, 0.12);
+    border-color: rgba(210, 153, 34, 0.35);
+}
+.agent-status--paused .agent-status__dot { background: #d29922; }
+
+.agent-status--quarantined {
+    color: #f85149;
+    background: rgba(248, 81, 73, 0.12);
+    border-color: rgba(248, 81, 73, 0.35);
+}
+.agent-status--quarantined .agent-status__dot { background: #f85149; }
+
+.agent-row__controls {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.agent-row__controls .btn {
+    min-width: 4.5rem;
+    justify-content: center;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.65rem;
+}
+
+.agent-row__controls .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.agent-row__controls .btn-quarantine {
+    color: var(--accent-danger, #f85149);
+    border-color: rgba(248, 81, 73, 0.45);
+    background: transparent;
+}
+
+.agent-row__controls .btn-quarantine:hover:not(:disabled) {
+    background: rgba(248, 81, 73, 0.12);
+}
+
+@media (max-width: 640px) {
+    .agent-row {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .agent-row__controls {
+        justify-content: stretch;
+    }
+
+    .agent-row__controls .btn {
+        flex: 1 1 auto;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="agents-page">
+    <div class="page-header">
+        <h1 class="page-title">Agents</h1>
+    </div>
+
+    <div class="panel" style="padding: 1rem 1.1rem 1.15rem;">
+        <div class="panel-header" style="margin-bottom: 0.85rem;">
+            <h2 class="panel-title">Managed agents</h2>
+            {% if agents %}
+            <span class="muted" style="font-size: 0.75rem;">{{ agents|length }} agent{{ agents|length|pluralize }}</span>
+            {% endif %}
+        </div>
+
+        {% if agents %}
+        <div class="agents-list">
+            {% for a in agents %}
+            <div class="agent-row">
+                <div class="agent-row__main">
+                    <div class="agent-row__title">
+                        <span class="agent-row__name">{{ a.name }}</span>
+                        {% if a.control_status == "active" and a.is_live %}
+                        <span class="agent-status agent-status--running"><span class="agent-status__dot" aria-hidden="true"></span>{{ a.status_label }}</span>
+                        {% elif a.control_status == "active" %}
+                        <span class="agent-status agent-status--idle"><span class="agent-status__dot" aria-hidden="true"></span>{{ a.status_label }}</span>
+                        {% elif a.control_status == "paused" %}
+                        <span class="agent-status agent-status--paused"><span class="agent-status__dot" aria-hidden="true"></span>{{ a.status_label }}</span>
+                        {% else %}
+                        <span class="agent-status agent-status--quarantined"><span class="agent-status__dot" aria-hidden="true"></span>{{ a.status_label }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="agent-row__meta">
+                        <code class="agent-row__key" title="{{ a.agent_key }}">{{ a.agent_key }}</code>
+                        {% if a.framework %}<span>{{ a.framework }}</span>{% endif %}
+                        <span>Last seen {{ a.last_seen_label }}</span>
+                    </div>
+                </div>
+                <form method="post" action="{% url 'ui:agent_control' a.id %}" class="agent-row__controls">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="start" class="btn btn-secondary" {% if a.control_status == "active" %}disabled{% endif %}>Start</button>
+                    <button type="submit" name="action" value="pause" class="btn btn-secondary" {% if a.control_status == "paused" %}disabled{% endif %}>Pause</button>
+                    <button type="submit" name="action" value="quarantine" class="btn btn-quarantine" {% if a.control_status == "quarantined" %}disabled{% endif %}>Quarantine</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted" style="margin: 0; padding: 0.35rem 0 0.15rem; font-size: 0.875rem;">No active agent</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
