@@ -1,4 +1,7 @@
 # EEG OSS - Open Source AI Security Platform
+# Mirrored as hard dependencies of the eeg-security PyPI package (see pyproject.toml).
+# Prefer: pip install eeg-security
+#
 # Core Django stack
 Django>=5.0,<6
 django-htmx>=1.21.0
@@ -18,7 +21,7 @@ django-celery-beat>=2.6.0
 redis>=5.0.0
 django-redis>=5.4.0
 
-# Cloud SDKs (optional - for cloud project scanning)
+# Cloud SDKs (optional - for cloud project scanning; also eeg-security[all])
 boto3>=1.34.0
 azure-identity>=1.15.0
 azure-mgmt-cognitiveservices>=13.5.0

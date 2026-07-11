@@ -1,6 +1,11 @@
 include README.md
 include LICENSE
 include docs/CLI.md
+include manage.py
 recursive-include eeg/rules *.yaml
 recursive-include eeg/runtime/packs *.yaml
-
+recursive-include eeg/webdata/templates *
+recursive-include eeg/webdata/static *
+recursive-include apps *
+recursive-include core *
+global-exclude *.py[cod] __pycache__ .DS_Store

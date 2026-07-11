@@ -10,7 +10,44 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+
+def _is_source_checkout(root: Path) -> bool:
+    return (root / "manage.py").is_file() and (root / "pyproject.toml").is_file()
+
+
+def _package_root() -> Path:
+    """Directory that contains ``core/`` (repo root in checkout, site-packages when installed)."""
+    return Path(__file__).resolve().parent.parent
+
+
+def _data_root() -> Path:
+    """Writable runtime data (DB, repos, collected static)."""
+    env = os.environ.get("EEG_HOME", "").strip()
+    if env:
+        return Path(env).expanduser()
+    pkg = _package_root()
+    if _is_source_checkout(pkg):
+        return pkg
+    return Path.home() / ".eeg"
+
+
+def _webdata_root() -> Path:
+    """Shipped templates/static (``eeg.webdata`` package)."""
+    try:
+        from eeg.webdata import PACKAGE_DIR
+
+        return PACKAGE_DIR
+    except Exception:
+        # Source checkout fallback before/during partial installs
+        candidate = _package_root() / "eeg" / "webdata"
+        if candidate.is_dir():
+            return candidate
+        return _package_root()
+
+
+BASE_DIR = _data_root()
+WEBDATA_DIR = _webdata_root()
+BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY",
@@ -20,7 +57,7 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes")
 
 # Replace browser HTML 403/404/500 (including Django debug pages when DEBUG=True)
-# with templates/403.html, 404.html, and 500.html. Skips /api/ and /admin/.
+# with eeg/webdata/templates/403.html, 404.html, and 500.html. Skips /api/ and /admin/.
 # Set EEG_BRANDED_CLIENT_ERRORS=false to restore Django technical error pages in dev.
 _branded = os.environ.get("EEG_BRANDED_CLIENT_ERRORS", "").strip().lower()
 if _branded in ("1", "true", "yes"):
@@ -82,7 +119,7 @@ CSRF_FAILURE_VIEW = "core.views_errors.csrf_failure"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [WEBDATA_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -143,7 +180,8 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
+_static_dir = WEBDATA_DIR / "static"
+STATICFILES_DIRS = [_static_dir] if _static_dir.exists() else []
 # Avoid Manifest storage: hashed URLs 404 unless collectstatic+manifest stay in sync
 # (dashboard-charts.js / threat-graph-3d.js were blank on the dashboard because of this).
 if DEBUG:
@@ -183,7 +221,11 @@ REDIS_URL = os.environ.get("EEG_REDIS_URL", "redis://localhost:6379/0")
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 
 def _build_cache_config(redis_url: str) -> dict:

@@ -195,15 +195,34 @@ def run_gateway_wrap(
 def run_web_serve(*, host: str = "127.0.0.1", port: int = 8000) -> int:
     """Serve the full EEG OSS Django/ASGI web app."""
     import os
+    from pathlib import Path
 
+    home = Path(os.environ.get("EEG_HOME", Path.home() / ".eeg")).expanduser()
+    home.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("EEG_HOME", str(home))
+    # Local pip installs: serve UI without requiring a separate Redis/collectstatic step.
+    os.environ.setdefault("DJANGO_DEBUG", "true")
+    os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
-    # Allow binding host in ALLOWED_HOSTS for local serve
+
     allowed = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
     if host not in allowed.split(",") and host not in ("0.0.0.0", "::"):
         os.environ["DJANGO_ALLOWED_HOSTS"] = f"{allowed},{host}"
 
     bind = f"{host}:{port}"
     sys.stderr.write(f"EEG serve starting on http://{host}:{port}\n")
+    sys.stderr.write(f"  data dir: {home}\n")
+
+    try:
+        import django
+
+        django.setup()
+        from django.core.management import call_command, execute_from_command_line
+
+        call_command("migrate", interactive=False, verbosity=0)
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"eeg: database migrate warning: {exc}\n")
+        from django.core.management import execute_from_command_line
 
     try:
         from daphne.cli import CommandLineInterface
@@ -212,8 +231,6 @@ def run_web_serve(*, host: str = "127.0.0.1", port: int = 8000) -> int:
         return 0
     except ImportError:
         pass
-
-    from django.core.management import execute_from_command_line
 
     execute_from_command_line(["manage.py", "runserver", bind, "--noreload"])
     return 0

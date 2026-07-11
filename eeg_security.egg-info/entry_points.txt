@@ -1,0 +1,2 @@
+[console_scripts]
+eeg = eeg.cli:main

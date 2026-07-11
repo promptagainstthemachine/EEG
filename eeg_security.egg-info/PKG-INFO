@@ -1,3 +1,62 @@
+Metadata-Version: 2.4
+Name: eeg-security
+Version: 2.5.0
+Summary: Extensive Exposure Guard — AI/agent static scans, runtime gateway, OSS dashboard, and CI/GitHub Action
+Author-email: findthehead <findthehead@proton.me>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/findthehead/eeg
+Project-URL: Repository, https://github.com/findthehead/eeg
+Project-URL: Issues, https://github.com/findthehead/eeg/issues
+Keywords: ai,security,agent,gateway,sast,sarif,cloud,aws,azure,gcp,devsecops,vulnerability,scanner,guardrails,bedrock,vertex,openai,django
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Information Technology
+Classifier: Topic :: Security
+Classifier: Topic :: Software Development :: Quality Assurance
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pyyaml>=6.0.1
+Requires-Dist: requests>=2.31.0
+Requires-Dist: jinja2>=3.1.2
+Requires-Dist: python-dateutil>=2.9.0
+Requires-Dist: Django<6,>=5.0
+Requires-Dist: django-htmx>=1.21.0
+Requires-Dist: cryptography>=42.0.0
+Requires-Dist: gunicorn>=22.0.0
+Requires-Dist: whitenoise>=6.6.0
+Requires-Dist: channels>=4.0.0
+Requires-Dist: channels-redis>=4.2.0
+Requires-Dist: daphne>=4.1.0
+Requires-Dist: celery>=5.4.0
+Requires-Dist: django-celery-beat>=2.6.0
+Requires-Dist: redis>=5.0.0
+Requires-Dist: django-redis>=5.4.0
+Provides-Extra: aws
+Requires-Dist: boto3>=1.34.0; extra == "aws"
+Provides-Extra: azure
+Requires-Dist: azure-identity>=1.15.0; extra == "azure"
+Requires-Dist: azure-mgmt-cognitiveservices>=13.5.0; extra == "azure"
+Requires-Dist: azure-mgmt-resource>=23.0.0; extra == "azure"
+Provides-Extra: gcp
+Requires-Dist: google-cloud-aiplatform>=1.40.0; extra == "gcp"
+Provides-Extra: all
+Requires-Dist: boto3>=1.34.0; extra == "all"
+Requires-Dist: azure-identity>=1.15.0; extra == "all"
+Requires-Dist: azure-mgmt-cognitiveservices>=13.5.0; extra == "all"
+Requires-Dist: azure-mgmt-resource>=23.0.0; extra == "all"
+Requires-Dist: google-cloud-aiplatform>=1.40.0; extra == "all"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Dynamic: license-file
+
 # `EEG - Extensive Exposure Guard`
 
 ### AI-first security for agents — static scans, runtime gateway, and OSS console

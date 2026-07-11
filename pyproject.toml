@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eeg-security"
-version = "2.4.0"
-description = "Extensive Exposure Guard — AI/agent static scans, runtime gateway wrap, and CI/GitHub Action (eeg CLI)"
+version = "2.5.0"
+description = "Extensive Exposure Guard — AI/agent static scans, runtime gateway, OSS dashboard, and CI/GitHub Action"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "findthehead", email = "findthehead@proton.me" },
 ]
-keywords = ["ai", "security", "agent", "gateway", "sast", "sarif", "cloud", "aws", "azure", "gcp", "devsecops", "vulnerability", "scanner", "guardrails", "bedrock", "vertex", "openai"]
+keywords = ["ai", "security", "agent", "gateway", "sast", "sarif", "cloud", "aws", "azure", "gcp", "devsecops", "vulnerability", "scanner", "guardrails", "bedrock", "vertex", "openai", "django"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -20,7 +20,6 @@ classifiers = [
     "Topic :: Security",
     "Topic :: Software Development :: Quality Assurance",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -28,9 +27,23 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.1",
     "requests>=2.31.0",
     "jinja2>=3.1.2",
+    "python-dateutil>=2.9.0",
+    # Full OSS console (eeg --serve)
+    "Django>=5.0,<6",
+    "django-htmx>=1.21.0",
+    "cryptography>=42.0.0",
+    "gunicorn>=22.0.0",
+    "whitenoise>=6.6.0",
+    "channels>=4.0.0",
+    "channels-redis>=4.2.0",
+    "daphne>=4.1.0",
+    "celery>=5.4.0",
+    "django-celery-beat>=2.6.0",
+    "redis>=5.0.0",
+    "django-redis>=5.4.0",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +75,7 @@ Repository = "https://github.com/findthehead/eeg"
 Issues = "https://github.com/findthehead/eeg/issues"
 
 [tool.setuptools.packages.find]
-include = ["eeg*"]
+include = ["eeg*", "apps*", "core*"]
 
 [tool.setuptools.package-data]
 eeg = [
@@ -71,10 +84,12 @@ eeg = [
     "rules/policy/*.yaml",
     "rules/bundles/**/*.yaml",
     "runtime/packs/*.yaml",
+    "webdata/templates/**/*",
+    "webdata/static/**/*",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --import-mode=importlib"

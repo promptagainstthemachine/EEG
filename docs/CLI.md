@@ -72,11 +72,11 @@ This is the CLI path for **dynamic** protection where a full in-cluster gateway 
 ## Console (`--serve`)
 
 ```bash
-pip install -r requirements.txt
+pip install eeg-security
 eeg --serve --host 127.0.0.1 --port 8000
 ```
 
-Requires the Django stack from `requirements.txt` (not all of which ships as hard deps of the minimal PyPI wheel).
+The PyPI package includes the full OSS dashboard (Django + templates/static). Runtime data defaults to `~/.eeg` (override with `EEG_HOME`).
 
 ## GitHub Action
 
