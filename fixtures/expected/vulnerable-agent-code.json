@@ -11,8 +11,8 @@
     "EEG-AEGIS-"
   ],
   "must_include_rule_substrings": [
-    "exec",
     "credential",
-    "api"
+    "api",
+    "injection"
   ]
 }
