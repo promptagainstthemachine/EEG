@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.http import HttpRequest
 
 from apps.accounts.models import User
@@ -71,5 +71,27 @@ def apply_dashboard_project_selection(
     saved = get_user_dashboard_project(user, organization)
     if saved and not projects.filter(pk=saved.pk).exists():
         set_user_dashboard_project(user, None)
-        return None, projects
+        saved = None
+
+    if saved is None and not requested:
+        from apps.projects.models import Project
+        from apps.security.models import AITrace
+
+        gateway_projects = projects.filter(
+            project_type=Project.ProjectType.GATEWAY,
+        ).exclude(gateway_agent_key="")
+        for gw in gateway_projects.order_by("-updated_at"):
+            keys = {gw.gateway_agent_key}
+            bare = gw.gateway_agent_key[8:] if gw.gateway_agent_key.startswith("runtime:") else gw.gateway_agent_key
+            keys.add(bare)
+            keys.add(f"runtime:{bare}")
+            has_traces = AITrace.objects.filter(organization=organization).filter(
+                Q(project=gw)
+                | Q(project__isnull=True, metadata__agent_key__in=list(keys))
+                | Q(project__isnull=True, session_id__in=[f"agent-{k}" for k in keys])
+            ).exists()
+            if has_traces:
+                set_user_dashboard_project(user, gw)
+                return gw, projects
+
     return saved, projects

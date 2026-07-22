@@ -216,7 +216,7 @@ Configure the PyPI project’s trusted publisher for this GitHub repo before the
 - **Code & forensics packs** — vendored rule bundles (practice patterns, prompt guard, etc.)  
 - **Dependencies** — AI-stack oriented dependency / CVE paths (`dep` / `full`)  
 - **Cloud static** — AWS / Azure / GCP AI surface rules when `--cloud` is set on `full`  
-- **Runtime (gateway-wrap / OSS gateway)** — policy, blocking, and attribution when traffic is proxied  
+- **Runtime (gateway-wrap / OSS gateway)** — ML-only guardrails (BERT / transformers): prompt injection, jailbreak, toxicity, PII, tool abuse. Config: `eeg/runtime/runtime_ml_models.yaml`. See [docs/RUNTIME_ML.md](docs/RUNTIME_ML.md).  
 
 ---
 
@@ -229,10 +229,21 @@ eeg/
 ├── probes/                 # Dynamic / HTTP surface probes
 ├── gateway/                # Runtime proxy & streaming
 ├── rules/                  # catalog.yaml + static/dynamic/bundles
-└── runtime/                # Guard / policy packs
+└── runtime/                # ML guard (BERT/transformers) + policy
 ```
 
 Web UI and org features live under `apps/`, `core/`, `eeg/webdata/` (templates + static), and `manage.py` (OSS console via `--serve`).
+
+### Runtime ML (OSS)
+
+OSS runtime detection is **gated to HuggingFace transformers** (`platform: hf|local`, `inference: transformers` only). Install:
+
+```bash
+pip install -r requirements-runtime-ml.txt
+# or: pip install transformers torch
+```
+
+Disable: `EEG_RUNTIME_ML=0`. Full reference: [docs/RUNTIME_ML.md](docs/RUNTIME_ML.md). SaaS adds Ollama / **guard_http** (remote Llama Guard service) / URI backends — see [`../EEG-SAAS/backend/docs/RUNTIME_ML.md`](../EEG-SAAS/backend/docs/RUNTIME_ML.md).
 
 ---
 

@@ -1,0 +1,17 @@
+# Runtime ML models — enabled by default (EEG_RUNTIME_ML=0 or EEG_AURORA_NEURAL=0 to disable)
+#
+# Auditable model registry: eeg/runtime/runtime_ml_models.yaml
+#   Override file: EEG_RUNTIME_ML_CONFIG=/path/to/custom.yaml|json
+#   Override one:  EEG_RUNTIME_ML_DEBERTA_PI_V2_MODEL=/local/path|hub/id|https://...
+#                  EEG_RUNTIME_ML_TOXIC_BERT_MODEL=...
+#                  EEG_RUNTIME_ML_AI4PRIVACY_PII_MODEL=...
+#
+# URI forms:
+#   hub:   protectai/deberta-v3-base-prompt-injection-v2
+#   local: /models/deberta-pi  or  file:///models/deberta-pi
+#   https: https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2
+#
+# Audit status: runtime_ml_status() / gateway lattice packs ml_engines
+
+transformers>=4.40.0
+torch>=2.2.0

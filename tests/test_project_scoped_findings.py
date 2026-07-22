@@ -117,6 +117,12 @@ class ProjectScopedFindingsTests(TestCase):
             [],
         )
 
+    def test_runtime_findings_include_orphan_traces_for_gateway_project(self):
+        self._trace(project=None, agent_key=self.gateway.gateway_agent_key)
+        rows = list_runtime_finding_dicts(self.org, project=self.gateway)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["severity"], "high")
+
     def test_dashboard_requires_project_selection(self):
         self._finding(self.static)
         response = self.client.get(reverse("ui:dashboard"))

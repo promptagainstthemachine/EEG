@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db.models import Q
+
 from apps.security.models import AITrace
 
 _SURFACE_LABEL = {
@@ -30,6 +32,33 @@ def _threat_level(trace: AITrace) -> str:
     return "low"
 
 
+def _agent_identity_keys(agent_key: str) -> set[str]:
+    raw = (agent_key or "").strip()
+    if not raw:
+        return set()
+    keys = {raw}
+    if raw.startswith("runtime:"):
+        keys.add(raw[8:])
+    else:
+        keys.add(f"runtime:{raw}")
+    return {k for k in keys if k}
+
+
+def _runtime_traces_queryset(org, project):
+    """Traces for runtime detection — project FK plus orphan rows for gateway apps."""
+    base = AITrace.objects.filter(organization=org)
+    if not getattr(project, "is_gateway_app", False) or not (project.gateway_agent_key or "").strip():
+        return base.filter(project=project)
+
+    keys = _agent_identity_keys(project.gateway_agent_key)
+    q = Q(project=project)
+    for key in keys:
+        q |= Q(project__isnull=True, metadata__agent_key=key)
+        q |= Q(project__isnull=True, metadata__agent_id=key)
+        q |= Q(project__isnull=True, session_id=f"agent-{key}")
+    return base.filter(q)
+
+
 def list_runtime_finding_dicts(
     org,
     *,
@@ -44,14 +73,15 @@ def list_runtime_finding_dicts(
     if org is None or project is None:
         return []
 
-    qs = (
-        AITrace.objects.filter(organization=org, project=project)
-        .order_by("-started_at")[: max(limit * 3, 100)]
-    )
+    qs = _runtime_traces_queryset(org, project).order_by("-started_at")[: max(limit * 3, 100)]
     out: list[dict[str, Any]] = []
     for t in qs:
         meta = t.metadata or {}
-        blocked = bool(meta.get("blocked_by_policy") or t.status == AITrace.Status.BLOCKED)
+        blocked = bool(
+            meta.get("blocked_by_policy")
+            or meta.get("blocked")
+            or t.status == AITrace.Status.BLOCKED
+        )
         interesting = blocked or float(t.risk_score or 0) >= 0.4 or t.trace_type in (
             AITrace.TraceType.TOOL_CALL,
             AITrace.TraceType.MCP_TOOL,

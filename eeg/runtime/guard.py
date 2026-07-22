@@ -1,4 +1,4 @@
-"""OSS runtime guard: lattice inspection → allow / sanitize / block."""
+"""OSS runtime guard: DeBERTa ML wrap → allow / sanitize / block."""
 
 from __future__ import annotations
 
@@ -76,6 +76,16 @@ def _format_conversation(messages: list[Any]) -> str:
         if text:
             lines.append(f"[{role}]: {text}")
     return "\n".join(lines)
+
+
+def _latest_user_text(messages: list[Any]) -> str:
+    """Newest user turn only — avoids re-blocking on older flagged history."""
+    for msg in reversed(messages or []):
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            text = _message_content(msg).strip()
+            if text:
+                return text
+    return ""
 
 
 def _lattice_to_decision(result: LatticeResult, *, phase: str) -> GuardDecision:
@@ -190,9 +200,9 @@ def guard_messages(
             return decision, sanitized
         return decision, None
 
-    conversation = _format_conversation(messages or []) or _message_content(
-        (messages or [None])[-1]
-    )
+    # Score the latest user turn. Full-history scoring re-triggers on prior
+    # jailbreaks still present in the client transcript after agent resume.
+    conversation = _latest_user_text(messages or []) or _format_conversation(messages or [])
     decision = guard_text(conversation, phase="request", config=cfg, session_id=session_id)
     if decision.policy_action == "sanitize" and decision.sanitized_text is not None:
         sanitized = copy.deepcopy(messages)

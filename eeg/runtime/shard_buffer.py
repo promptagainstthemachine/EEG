@@ -1,4 +1,7 @@
-"""Shard buffer — rolling fragment reassembly for split-payload detection."""
+"""Shard buffer — rolling fragment reassembly for split-payload detection.
+
+Reassembled text is scored with the runtime ML guard (no regex/sigil packs).
+"""
 
 from __future__ import annotations
 
@@ -9,8 +12,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
-from eeg.runtime.sigil_weave import weave_sigils
-from eeg.runtime.spectral_probe import probe_spectrum
+from eeg.runtime.runtime_ml_guard import assess_runtime_text
 
 
 def shannon_entropy(text: str) -> float:
@@ -33,18 +35,15 @@ def looks_like_fragment(text: str) -> bool:
     stripped = (text or "").strip()
     if not stripped:
         return False
-
     words = stripped.split()
     dens = shannon_entropy(stripped)
     spaces = stripped.count(" ")
     ends_sentence = stripped[-1] in ".?!"
-
     # Complete, low-entropy utterances are never treated as shards.
     if ends_sentence and len(words) >= 4 and dens < 4.0:
         return False
     if len(words) >= 8 and dens < 4.0 and spaces >= 5:
         return False
-
     if len(stripped) < 28:
         return True
     if len(words) <= 4 and dens >= 3.8:
@@ -92,7 +91,7 @@ class ShardBuffer:
         min_piece: int = 8,
         entropy_budget: float = 180.0,
         min_fragments_for_budget: int = 3,
-    ):
+    ) -> None:
         self.max_sessions = max_sessions
         self.max_chars = max_chars
         self.min_piece = min_piece
@@ -125,28 +124,22 @@ class ShardBuffer:
         text = (piece or "").strip()
         if len(text) < self.min_piece:
             return ShardAssessment()
-
         if not looks_like_fragment(text):
             self.clear(sid)
             return ShardAssessment()
-
         self._touch(sid)
         prev = self._buffers.get(sid, "")
         merged = (prev + "\n" + text)[-self.max_chars :]
         self._buffers[sid] = merged
         self._fragment_counts[sid] = self._fragment_counts.get(sid, 0) + 1
-
         ent = shannon_entropy(text)
         spent = self._entropy_spent.get(sid, 0.0) + ent * min(len(text), 64)
         self._entropy_spent[sid] = spent
         fragments = self._fragment_counts[sid]
 
-        sigils = weave_sigils(merged)
-        spectral = probe_spectrum(merged)
-        score = max(sigils.score, spectral.score)
-        categories = sorted(
-            set(sigils.categories + ([spectral.label] if spectral.score >= 0.4 else []))
-        )
+        ml = assess_runtime_text(merged, phase="request")
+        score = float(ml.score)
+        categories = list(ml.categories)
 
         budget_hit = (
             fragments >= self.min_fragments_for_budget
@@ -157,8 +150,7 @@ class ShardBuffer:
         if budget_hit:
             score = max(score, 0.72)
             categories = sorted(set(categories + ["shard_entropy_budget"]))
-
-        triggered = (sigils.score >= 0.55 or spectral.score >= 0.55) or budget_hit
+        triggered = (score >= 0.55) or budget_hit
         return ShardAssessment(
             score=score if triggered else 0.0,
             entropy=ent,

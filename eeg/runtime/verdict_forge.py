@@ -192,7 +192,11 @@ def _primary_from_layers(layers: dict[str, float], threats: list[str]) -> str:
 
 
 class SessionEscalator:
-    """Escalate repeated blocks/quarantines within a rolling window."""
+    """Escalate repeated blocks/quarantines within a rolling window.
+
+    Clean benign turns (no threats, near-zero risk) are never escalated — otherwise
+    agent-scoped session keys lock out "hi" / normal chat after a few prior blocks.
+    """
 
     def __init__(self, *, window_sec: float = 3600.0, flag_at: int = 3, block_at: int = 5):
         self.window_sec = window_sec
@@ -206,18 +210,48 @@ class SessionEscalator:
         q.append((now, action))
         self._prune(q, now)
 
+    def clear(self, session_id: str) -> None:
+        self._events.pop(session_id, None)
+
+    def decay(self, session_id: str, *, drop: int = 1) -> None:
+        """Drop oldest harsh events after a clean allow so sessions can recover."""
+        q = self._events.get(session_id)
+        if not q:
+            return
+        removed = 0
+        while q and removed < drop:
+            q.popleft()
+            removed += 1
+        if not q:
+            self._events.pop(session_id, None)
+
+    @staticmethod
+    def _is_clean_allow(verdict: ForgedVerdict) -> bool:
+        return (
+            verdict.action == "allow"
+            and float(verdict.risk_score or 0.0) <= 0.05
+            and not verdict.threats
+        )
+
     def upgrade(self, session_id: str, verdict: ForgedVerdict) -> ForgedVerdict:
         now = time.time()
         q = self._events[session_id]
         self._prune(q, now)
+
+        # Never punish a clearly benign turn — clears sticky agent locks.
+        if self._is_clean_allow(verdict):
+            self.decay(session_id, drop=2)
+            return verdict
+
         harsh = sum(1 for _, a in q if a in {"block", "sanitize"})
-        if harsh >= self.block_at and verdict.action != "block":
+        # Only escalate turns that already look risky (avoid forcing block on noise).
+        if harsh >= self.block_at and verdict.action != "block" and float(verdict.risk_score or 0.0) >= 0.35:
             verdict.action = "block"
             verdict.tier = "block"
             verdict.primary_reason = "SESSION_ESCALATION_BLOCK"
             verdict.escalated = True
             verdict.risk_score = max(verdict.risk_score, 0.9)
-        elif harsh >= self.flag_at and verdict.action == "allow":
+        elif harsh >= self.flag_at and verdict.action == "allow" and float(verdict.risk_score or 0.0) >= 0.2:
             verdict.action = "sanitize"
             verdict.tier = "sanitize"
             verdict.primary_reason = "SESSION_ESCALATION_FLAG"

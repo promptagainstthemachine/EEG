@@ -100,6 +100,18 @@ def _tool_name_args(tc: dict) -> tuple[str, str]:
 
 
 def _make_ingest_cb(org, project_id=None, *, default_trace_type: str = "llm_call", agent_key: str = ""):
+    from apps.security.agent_control import normalize_agent_key
+
+    resolved_project_id = project_id
+    key = normalize_agent_key(agent_key or "") if (agent_key or "").strip() else ""
+    if not resolved_project_id and key:
+        from apps.projects.gateway_sync import ensure_gateway_project
+
+        display = key[8:] if key.startswith("runtime:") else key
+        gw_project = ensure_gateway_project(org, key, name=display)
+        if gw_project:
+            resolved_project_id = gw_project.pk
+
     def _ingest_cb(**fields):
         if not getattr(org, "realtime_telemetry_enabled", True):
             return
@@ -143,7 +155,7 @@ def _make_ingest_cb(org, project_id=None, *, default_trace_type: str = "llm_call
                 "risk_signals": fields.get("risk_signals", []),
                 "latency_ms": fields.get("latency_ms", 0),
                 "started_at": started.isoformat() if hasattr(started, "isoformat") else started,
-                "project_id": project_id,
+                "project_id": resolved_project_id,
                 "session_id": fields.get("session_id") or (f"agent-{agent_key}" if agent_key else "gateway"),
                 "metadata": meta,
             }
@@ -169,7 +181,7 @@ def _make_ingest_cb(org, project_id=None, *, default_trace_type: str = "llm_call
                     "risk_signals": list(fields.get("risk_signals") or []) + ["tool_call"],
                     "latency_ms": 0,
                     "started_at": started.isoformat() if hasattr(started, "isoformat") else started,
-                    "project_id": project_id,
+                    "project_id": resolved_project_id,
                     "session_id": fields.get("session_id") or (f"agent-{agent_key}" if agent_key else "gateway"),
                     "metadata": {
                         **meta,
@@ -199,6 +211,7 @@ def _make_ingest_cb(org, project_id=None, *, default_trace_type: str = "llm_call
 def _maybe_block_agent(org, request, body: dict) -> Optional[JsonResponse]:
     from apps.security.agent_control import (
         is_agent_blocked,
+        normalize_agent_key,
         resolve_agent_ref,
         touch_agent_from_request,
     )
@@ -211,6 +224,7 @@ def _maybe_block_agent(org, request, body: dict) -> Optional[JsonResponse]:
     blocked, status = is_agent_blocked(org, agent_ref)
     if not blocked:
         return None
+    canonical = normalize_agent_key(agent_ref)
     decision = GuardDecision(
         blocked=True,
         reason=f"Agent '{agent_ref}' is {status}",
@@ -229,9 +243,9 @@ def _maybe_block_agent(org, request, body: dict) -> Optional[JsonResponse]:
         reason=decision.reason,
         risk_score=decision.risk_score,
         risk_signals=decision.risk_signals,
-        extra={"agent_key": agent_ref, "control_status": status},
+        extra={"agent_key": canonical or agent_ref, "control_status": status},
     )
-    ingest = _make_ingest_cb(org, body.get("project_id"), agent_key=agent_ref)
+    ingest = _make_ingest_cb(org, body.get("project_id"), agent_key=canonical or agent_ref)
     ingest(
         trace_id=f"block-{uuid4().hex[:12]}",
         model=str(body.get("model") or ""),
@@ -286,9 +300,9 @@ def _dispatch_with_plan(
 ):
     cfg = _policy_config(org)
     project_id = body.pop("project_id", None)
-    from apps.security.agent_control import resolve_agent_ref
+    from apps.security.agent_control import normalize_agent_key, resolve_agent_ref
 
-    agent_key = resolve_agent_ref(request, body)
+    agent_key = normalize_agent_key(resolve_agent_ref(request, body) or "")
     base_ingest = _make_ingest_cb(
         org,
         project_id,
@@ -524,22 +538,21 @@ class GatewayLatticePacksView(View):
     """List compiled runtime sigil packs available to the lattice."""
 
     def get(self, request):
+        from eeg.runtime.runtime_ml_guard import runtime_ml_status
         from eeg.runtime.sigil_weave import list_pack_catalog
-        from eeg.runtime.spectral_probe import spectral_engine_status
 
         packs = list_pack_catalog()
         return JsonResponse(
             {
                 "packs": packs,
                 "count": len(packs),
+                "note": "Runtime blocking uses ML models only; sigil packs are for static/audit catalog.",
                 "layers": [
-                    {"id": "sigil", "label": "Sigil weave"},
-                    {"id": "spectral", "label": "Spectral probe"},
-                    {"id": "heuristic", "label": "Heuristic scorer"},
-                    {"id": "tool", "label": "Tool weave"},
-                    {"id": "shard", "label": "Shard buffer"},
+                    {"id": "runtime_ml", "label": "Runtime ML guard (blocking)"},
+                    {"id": "shard", "label": "Shard buffer (ML reassembly)"},
+                    {"id": "sigil_static", "label": "Sigil weave (static/audit only)"},
                 ],
-                "ml_engines": spectral_engine_status(),
+                "ml_engines": runtime_ml_status(),
             }
         )
 

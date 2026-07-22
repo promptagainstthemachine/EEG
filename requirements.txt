@@ -30,3 +30,6 @@ google-cloud-aiplatform>=1.43.0
 # Utilities
 pyyaml>=6.0.1
 python-dateutil>=2.9.0
+
+# Runtime PI guard (DeBERTa) — install with: pip install -r requirements-runtime-ml.txt
+-r requirements-runtime-ml.txt

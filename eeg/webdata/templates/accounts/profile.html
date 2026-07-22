@@ -271,6 +271,14 @@
 
 <script>
 function showTab(tabName) {
+    var prev = document.querySelector('.tab-btn.active');
+    var prevName = prev ? prev.getAttribute('data-tab') : '';
+    // Hide raw API key whenever leaving the API Keys tab (one-time reveal).
+    if (prevName === 'api' && tabName !== 'api') {
+        document.querySelectorAll('.api-key-display, .api-key-warning').forEach(function (el) {
+            el.remove();
+        });
+    }
     document.querySelectorAll('.tab-content').forEach(function (tab) {
         tab.classList.remove('active');
     });
@@ -292,6 +300,20 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
         showTab('profile');
     }
+});
+
+// Redact one-time API key if the page is hidden or another window takes focus.
+document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+        document.querySelectorAll('.api-key-display, .api-key-warning').forEach(function (el) {
+            el.remove();
+        });
+    }
+});
+window.addEventListener('pagehide', function () {
+    document.querySelectorAll('.api-key-display, .api-key-warning').forEach(function (el) {
+        el.remove();
+    });
 });
 </script>
 {% endblock %}

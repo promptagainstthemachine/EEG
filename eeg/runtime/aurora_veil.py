@@ -1,12 +1,16 @@
+"""Aurora veil — ML-only runtime classifier (legacy name).
+
+Delegates to `runtime_ml_guard` (auditable registry). Prefer importing
+from `runtime_ml_guard` directly in new code.
+"""
+
 from __future__ import annotations
 
-import os
-import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-_DEFAULT_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
-_SCORE_FLOOR = 0.55
+from eeg.runtime.runtime_ml_guard import assess_prompt_injection, runtime_ml_status
+from eeg.runtime.runtime_ml_registry import load_registry, runtime_ml_enabled
 
 
 @dataclass
@@ -29,122 +33,43 @@ class AuroraAssessment:
         }
 
 
-def _neural_enabled() -> bool:
-    return os.environ.get("EEG_AURORA_NEURAL", os.environ.get("EEG_SPECTRAL_NEURAL", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-
-def _model_id() -> str:
-    return (
-        os.environ.get("EEG_AURORA_MODEL")
-        or os.environ.get("EEG_SPECTRAL_MODEL")
-        or _DEFAULT_MODEL
+def aurora_score(text: str) -> AuroraAssessment:
+    enabled = runtime_ml_enabled()
+    if not text or not str(text).strip():
+        return AuroraAssessment(enabled=enabled, ready=True)
+    pi = assess_prompt_injection(str(text))
+    model = load_registry().by_provider("deberta_pi_v2")
+    return AuroraAssessment(
+        score=pi.score,
+        label=pi.label,
+        triggered=pi.triggered,
+        ready=pi.ready,
+        enabled=pi.enabled,
+        details={
+            "engine": "runtime_ml_guard",
+            "model": model.resolved_uri if model else None,
+            "source_type": model.source_type if model else None,
+            **(pi.details if isinstance(pi.details, dict) else {}),
+        },
     )
+
+
+def aurora_status() -> dict[str, Any]:
+    status = runtime_ml_status()
+    status["engine"] = "aurora_veil"
+    return status
 
 
 class AuroraVeil:
     def __init__(self) -> None:
-        self.enabled = _neural_enabled()
-        self.ready = False
-        self._pipeline = None
-        self._model_id = _model_id()
-        if self.enabled:
-            self._boot()
-
-    def _boot(self) -> None:
-        try:
-            from transformers import pipeline as hf_pipeline  # type: ignore
-        except Exception:
-            self.ready = False
-            return
-        try:
-            self._pipeline = hf_pipeline(
-                "text-classification",
-                model=self._model_id,
-                truncation=True,
-                max_length=512,
-                device=-1,
-            )
-            self.ready = True
-        except Exception:
-            self._pipeline = None
-            self.ready = False
+        self.enabled = runtime_ml_enabled()
+        self.ready = True
+        model = load_registry().by_provider("deberta_pi_v2")
+        self._model_id = model.resolved_uri if model else ""
 
     def score_text(self, text: str) -> AuroraAssessment:
-        if not self.enabled:
-            return AuroraAssessment(enabled=False, ready=False, details={"engine": "aurora_veil"})
-        if not self.ready or self._pipeline is None:
-            return AuroraAssessment(
-                enabled=True,
-                ready=False,
-                details={"engine": "aurora_veil", "model": self._model_id},
-            )
-        try:
-            result = self._pipeline((text or "")[:4000])
-            row = result[0] if isinstance(result, list) and result else result
-            raw_label = str((row or {}).get("label") or "").upper()
-            score = float((row or {}).get("score") or 0.0)
-            if "INJECTION" in raw_label and score >= _SCORE_FLOOR:
-                return AuroraAssessment(
-                    score=round(score, 4),
-                    label="prompt_injection",
-                    triggered=True,
-                    ready=True,
-                    enabled=True,
-                    details={
-                        "engine": "aurora_veil",
-                        "model": self._model_id,
-                        "raw_label": raw_label,
-                    },
-                )
-            return AuroraAssessment(
-                score=0.0,
-                label="benign",
-                triggered=False,
-                ready=True,
-                enabled=True,
-                details={
-                    "engine": "aurora_veil",
-                    "model": self._model_id,
-                    "raw_label": raw_label,
-                },
-            )
-        except Exception:
-            return AuroraAssessment(
-                enabled=True,
-                ready=False,
-                details={"engine": "aurora_veil", "model": self._model_id},
-            )
-
-
-_VEIL: AuroraVeil | None = None
-_LOCK = threading.Lock()
+        return aurora_score(text)
 
 
 def get_aurora_veil() -> AuroraVeil:
-    global _VEIL
-    if _VEIL is None:
-        with _LOCK:
-            if _VEIL is None:
-                _VEIL = AuroraVeil()
-    return _VEIL
-
-
-def aurora_score(text: str) -> AuroraAssessment:
-    if not text or not str(text).strip():
-        return AuroraAssessment(enabled=_neural_enabled(), ready=True)
-    return get_aurora_veil().score_text(str(text))
-
-
-def aurora_status() -> dict[str, Any]:
-    veil = get_aurora_veil()
-    return {
-        "engine": "aurora_veil",
-        "enabled": bool(veil.enabled),
-        "ready": bool(veil.ready),
-        "model": veil._model_id,
-    }
+    return AuroraVeil()

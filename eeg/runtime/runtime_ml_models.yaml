@@ -1,0 +1,62 @@
+# EEG OSS runtime ML model registry (BERT / transformers only)
+#
+# OSS is intentionally gated:
+#   platform:  hf | local   (HF-format checkpoints only)
+#   inference: transformers only
+#
+# For Ollama / llama.cpp / remote URI serving, use EEG-SAAS.
+#
+# Override: EEG_RUNTIME_ML_CONFIG=...
+# Per model: EEG_RUNTIME_ML_<PROVIDER>_MODEL=<hub|local HF path>
+
+version: 1
+enabled: true
+edition: oss
+task: text-classification
+
+models:
+  - provider_id: deberta_pi_v2
+    category: prompt_injection
+    display_name: ProtectAI DeBERTa PI v2
+    platform: hf
+    inference: transformers
+    model: protectai/deberta-v3-base-prompt-injection-v2
+    score_floor: 0.95
+    max_length: 512
+    truncate_chars: 4000
+    positive_labels:
+      - INJECTION
+      - LABEL_1
+      - PROMPT_INJECTION
+
+  - provider_id: toxic_bert
+    category: toxicity
+    display_name: Unitary Toxic-BERT
+    platform: hf
+    inference: transformers
+    model: unitary/toxic-bert
+    score_floor: 0.50
+    max_length: 512
+    truncate_chars: 4000
+    positive_labels:
+      - toxic
+      - TOXIC
+      - LABEL_1
+
+  - provider_id: ai4privacy_pii
+    category: pii
+    display_name: DistilBERT AI4Privacy PII
+    platform: hf
+    inference: transformers
+    model: Isotonic/distilbert_finetuned_ai4privacy_v2
+    score_floor: 0.50
+    max_length: 512
+    truncate_chars: 4000
+    positive_labels:
+      - PII
+      - LABEL_1
+      - I-PER
+      - I-ORG
+      - I-LOC
+      - B-PER
+      - B-ORG

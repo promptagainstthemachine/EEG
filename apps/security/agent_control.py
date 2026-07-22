@@ -18,6 +18,13 @@ BLOCKING_STATUSES = frozenset(
 )
 
 
+def normalize_agent_key(ref: str) -> str:
+    raw = (ref or "").strip()
+    if not raw:
+        return ""
+    return raw if raw.startswith("runtime:") else f"runtime:{raw}"
+
+
 def _policy_config(org) -> dict[str, Any]:
     raw = getattr(org, "runtime_policy_config", None) or {}
     return dict(raw) if isinstance(raw, dict) else {}
@@ -36,10 +43,12 @@ def agent_identities(agent: ManagedAgent) -> set[str]:
         vals = meta.get(field) or []
         if isinstance(vals, (list, tuple)):
             keys.update(str(v).strip() for v in vals if str(v).strip())
-    for field in ("display_name", "name"):
+    for field in ("display_name", "name", "gateway_label", "requester"):
         val = meta.get(field) or getattr(agent, field, "")
         if val:
             keys.add(str(val).strip())
+    if agent.agent_key.startswith("runtime:"):
+        keys.add(agent.agent_key[8:])
     return {k for k in keys if k}
 
 
@@ -48,8 +57,9 @@ def is_agent_blocked(org, agent_ref: str | None) -> tuple[bool, str]:
     ref = (agent_ref or "").strip()
     if not ref:
         return False, ""
+    canonical = normalize_agent_key(ref)
     agent = (
-        ManagedAgent.objects.filter(organization=org, agent_key=ref)
+        ManagedAgent.objects.filter(organization=org, agent_key=canonical)
         .only("control_status", "metadata", "agent_key", "name")
         .first()
     )
@@ -73,25 +83,61 @@ def ensure_agent(
     name: str = "",
     metadata: dict[str, Any] | None = None,
 ) -> ManagedAgent | None:
-    key = (agent_key or "").strip()
-    if not key:
+    raw = (agent_key or "").strip()
+    if not raw:
         return None
+    key = normalize_agent_key(raw)[:255]
+    bare = key[8:] if key.startswith("runtime:") else key
+    display = (name or bare or key).strip()
+    if display.startswith("runtime:"):
+        display = display[8:]
+    display = display[:255] or key
+
     defaults: dict[str, Any] = {
-        "name": (name or key)[:255],
+        "name": display,
         "last_seen_at": dj_tz.now(),
     }
     if metadata:
         defaults["metadata"] = metadata
-    agent, created = ManagedAgent.objects.get_or_create(
-        organization=org,
-        agent_key=key[:255],
-        defaults=defaults,
-    )
-    if not created:
+
+    agent = ManagedAgent.objects.filter(organization=org, agent_key=key).first()
+    created = False
+    if bare and bare != key:
+        legacy = ManagedAgent.objects.filter(organization=org, agent_key=bare).first()
+        if legacy and agent is not None and legacy.pk != agent.pk:
+            merged = dict(agent.metadata or {})
+            merged.update(legacy.metadata or {})
+            aliases = list(merged.get("aliases") or [])
+            for alias in (bare, legacy.name, display):
+                if alias and alias not in aliases:
+                    aliases.append(alias)
+            merged["aliases"] = aliases[:32]
+            agent.metadata = merged
+            if not agent.name or agent.name in (key, bare):
+                agent.name = display or legacy.name
+            agent.last_seen_at = dj_tz.now()
+            agent.save(update_fields=["metadata", "name", "last_seen_at", "updated_at"])
+            legacy.delete()
+        elif legacy and agent is None:
+            legacy.agent_key = key
+            if not legacy.name or legacy.name in (bare, key):
+                legacy.name = display
+            legacy.last_seen_at = dj_tz.now()
+            legacy.save(update_fields=["agent_key", "name", "last_seen_at", "updated_at"])
+            agent = legacy
+
+    if agent is None:
+        agent, created = ManagedAgent.objects.get_or_create(
+            organization=org,
+            agent_key=key,
+            defaults=defaults,
+        )
+
+    if not created and agent is not None:
         updates = ["last_seen_at", "updated_at"]
         agent.last_seen_at = dj_tz.now()
-        if name and not agent.name:
-            agent.name = name[:255]
+        if name and (not agent.name or agent.name in (key, bare, f"runtime:{bare}")):
+            agent.name = display
             updates.append("name")
         if metadata:
             merged = dict(agent.metadata or {})
@@ -99,6 +145,7 @@ def ensure_agent(
             agent.metadata = merged
             updates.append("metadata")
         agent.save(update_fields=updates)
+
     try:
         from apps.projects.gateway_sync import ensure_gateway_project
 
@@ -245,26 +292,33 @@ def resolve_agent_ref(request, body: dict | None = None) -> str:
 
     Accepted locations (first match wins):
     - ``X-EEG-Agent`` / ``X-EEG-Agent-Id`` / ``X-Agent-Id`` headers
-    - top-level ``agent_id`` / ``agent_key`` / ``agent``
+    - ``X-EEG-Gateway-Label`` header (standard for pass-through gateway clients)
+    - top-level ``agent_id`` / ``agent_key`` / ``agent`` / ``user`` (OpenAI field)
     - ``metadata.agent_id`` / ``metadata.agent_key`` / ``metadata.agent``
-      (used by AI Goat and similar clients)
+    - ``eeg.agent_id`` extension field
     """
     body = body or {}
     header = (
         request.headers.get("X-EEG-Agent")
         or request.headers.get("X-EEG-Agent-Id")
         or request.headers.get("X-Agent-Id")
+        or request.headers.get("X-EEG-Gateway-Label")
         or ""
     )
     meta = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+    eeg = body.get("eeg") if isinstance(body.get("eeg"), dict) else {}
     raw = (
         header
         or body.get("agent_id")
         or body.get("agent_key")
         or body.get("agent")
+        or body.get("user")
+        or body.get("gateway_label")
         or meta.get("agent_id")
         or meta.get("agent_key")
         or meta.get("agent")
+        or eeg.get("agent_id")
+        or eeg.get("agent_key")
         or ""
     )
     return str(raw).strip()
@@ -282,18 +336,30 @@ def touch_agent_from_request(
     ref = resolve_agent_ref(request, body)
     if not ref:
         return None
+    key = normalize_agent_key(ref)
     meta = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
+    gateway_label = (request.headers.get("X-EEG-Gateway-Label") or ref).strip()
     display = (
         name
         or str(meta.get("name") or meta.get("display_name") or "").strip()
+        or gateway_label
         or ref
     )
     framework = str(meta.get("framework") or "").strip()
+    merged_meta = dict(meta) if meta else {}
+    merged_meta.setdefault("source", "gateway")
+    merged_meta.setdefault("gateway_label", gateway_label)
+    merged_meta.setdefault("requester", display)
+    aliases = list(merged_meta.get("aliases") or [])
+    for alias in (display, ref, gateway_label):
+        if alias and alias not in aliases:
+            aliases.append(alias)
+    merged_meta["aliases"] = aliases[:32]
     agent = ensure_agent(
         org,
-        ref,
+        key,
         name=display,
-        metadata=dict(meta) if meta else None,
+        metadata=merged_meta,
     )
     if agent and framework and not agent.framework:
         agent.framework = framework[:128]

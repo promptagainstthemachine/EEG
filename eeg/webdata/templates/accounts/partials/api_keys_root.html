@@ -7,7 +7,7 @@
     {% endif %}
 
     {% if raw_api_key %}
-    <div class="api-key-display" style="background: var(--bg-primary); border: 1px solid var(--accent-success); border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+    <div class="api-key-display" data-eeg-one-time-key="1" style="background: var(--bg-primary); border: 1px solid var(--accent-success); border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap;">
             <div style="flex: 1; min-width: 0;">
                 <strong>New API Key:</strong><br>
@@ -16,7 +16,7 @@
             <button type="button" class="btn btn-secondary eeg-copy-api-key-btn" style="font-size: 0.8125rem; flex-shrink: 0;">Copy</button>
         </div>
     </div>
-    <p class="api-key-warning" style="color: var(--accent-warning); font-size: 0.875rem; margin-top: 0.5rem;">Copy this key now. It will not be shown again.</p>
+    <p class="api-key-warning" style="color: var(--accent-warning); font-size: 0.875rem; margin-top: 0.5rem;">Copy this key now. It will be hidden when you leave this tab or window.</p>
     {% endif %}
 
     <form
